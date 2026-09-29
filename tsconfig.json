@@ -154,9 +154,6 @@
       "path": "./packages/whatsapp"
     },
     {
-      "path": "./apps/landing-page"
-    },
-    {
       "path": "./packages/billing"
     },
     {
@@ -230,6 +227,9 @@
     },
     {
       "path": "./packages/spaces"
+    },
+    {
+      "path": "./packages/forge/blocks/hostAction"
     }
   ]
 }
