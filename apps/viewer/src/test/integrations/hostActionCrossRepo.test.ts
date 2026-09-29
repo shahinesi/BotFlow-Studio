@@ -213,9 +213,15 @@ crossRepoTest(
       botAppConnection: {
         findUnique: async () => ({
           enabled: true,
-          botApp: { id: "app-a", status: "ACTIVE" },
+          botApp: {
+            id: "app-a",
+            status: "ACTIVE",
+            executionProvider: "BOTFLOW",
+            externalFlowId: "flow-a",
+          },
         }),
       },
+      botFlowSession: { findUnique: async () => null },
       botCommand: {
         findMany: async () => [
           {

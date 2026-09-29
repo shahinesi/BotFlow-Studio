@@ -16,6 +16,7 @@ flowchart LR
 
 The private viewer routes are:
 
+- `POST /api/internal/host/flows/verify` with `{ "flowId": "published-flow-id" }`. This service-authenticated endpoint confirms that an open, published, available Flow exists; it does not return Flow data.
 - `POST /api/internal/host/start` with `{ "flowId": "published-flow-id", "message": "optional" }`
 - `POST /api/internal/host/sessions/:sessionId/continue` with `{ "flowId": "published-flow-id", "message": "input" }`
 
@@ -64,4 +65,4 @@ There is no dynamic Action Catalog yet. The first live gateway example and publi
 
 ## Verification status
 
-The Host bridge, request-scope isolation, generic block invocation, public fail-closed behavior, and synthetic ShahrFarsh Gateway contract have targeted tests. The published-flow/real-`ChatSession`/restart regression remains in the suite as an opt-in test requiring a disposable PostgreSQL URL and a Node binary; it was not rerun during genericization because those test environment variables were unavailable. Production routing remains planned.
+The Host bridge, Flow verification, request-scope isolation, generic block invocation, public fail-closed behavior, and synthetic Host Gateway contract have targeted tests. On 2026-09-29, the opt-in published-flow regression passed against a new local disposable PostgreSQL database after building the viewer: official migrations, actual publish, real `ChatSession`, Flow pause, process restart, same-session continue/completion, context/credential leak scan, session isolation, and public fail-closed checks. This test uses a synthetic Host gateway and identity; it is not production channel acceptance. Production routing remains planned.

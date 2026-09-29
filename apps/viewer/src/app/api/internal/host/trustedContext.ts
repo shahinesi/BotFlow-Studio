@@ -14,13 +14,7 @@ export const verifyHostRequest = (
   request: Request,
   now = Math.floor(Date.now() / 1000),
 ): TrustedHostExecutionContext => {
-  if (
-    !equal(
-      request.headers.get("x-host-service-key"),
-      process.env.HOST_BRIDGE_SERVICE_KEY,
-    )
-  )
-    throw new Error("Unauthorized Host request");
+  verifyHostServiceRequest(request);
   const bindingSecret = process.env.HOST_SESSION_BINDING_KEY;
   if (!bindingSecret || bindingSecret.length < 32)
     throw new Error("Host session binding is not configured");
@@ -50,6 +44,16 @@ export const verifyHostRequest = (
   if (!isHostExecutionContextEnvelope(envelope, now))
     throw new Error("Invalid Host execution context");
   return { signedContext, envelope };
+};
+
+export const verifyHostServiceRequest = (request: Request) => {
+  if (
+    !equal(
+      request.headers.get("x-host-service-key"),
+      process.env.HOST_BRIDGE_SERVICE_KEY,
+    )
+  )
+    throw new Error("Unauthorized Host request");
 };
 
 export const sessionBinding = (

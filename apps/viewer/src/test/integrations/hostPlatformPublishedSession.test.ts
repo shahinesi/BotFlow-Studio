@@ -66,6 +66,7 @@ integrationTest(
             outputVariableId: diagnosticId,
           },
         },
+        textBlock(`diagnostic-display-${id}`, "{{diagnostic}}"),
         textBlock(`prompt-${id}`, "یک مقدار وارد کنید"),
         {
           id: `input-block-${id}`,
@@ -177,9 +178,15 @@ integrationTest(
         botAppConnection: {
           findUnique: async () => ({
             enabled: true,
-            botApp: { id: "bi-app", status: "ACTIVE" },
+            botApp: {
+              id: "bi-app",
+              status: "ACTIVE",
+              executionProvider: "BOTFLOW",
+              externalFlowId: publicFlowId,
+            },
           }),
         },
+        botFlowSession: { findUnique: async () => null },
         botCommand: {
           findMany: async () => [{ policy: "ALL_VERIFIED_USERS" }],
         },
@@ -302,6 +309,11 @@ integrationTest(
           JSON.stringify(m).includes("phase-1b-start"),
         ),
       ).toBe(true);
+      expect(
+        startedA.body.messages.some((m: unknown) =>
+          JSON.stringify(m).includes("پلتفرم: TELEGRAM"),
+        ),
+      ).toBe(true);
       expect(startedA.body.input?.id).toBe(`input-block-${id}`);
       expect(actionCalls).toBe(1);
       const sessionA = startedA.body.sessionId as string;
@@ -421,7 +433,7 @@ integrationTest(
             bindingFor("missing-session", "bi-user-a"),
           )
         ).status,
-      ).toBe(401);
+      ).toBe(404);
 
       const otherPublicFlowId = `phase1b-other-${id}`;
       const otherTypebotId = `phase1b-other-typebot-${id}`;
@@ -451,7 +463,7 @@ integrationTest(
             body: { flowId: otherPublicFlowId, message: "input" },
           })
         ).status,
-      ).toBe(401);
+      ).toBe(404);
 
       await prisma.typebot.update({
         where: { id: typebotId },
@@ -498,6 +510,22 @@ integrationTest(
         const baseUrl = `http://127.0.0.1:${port}`;
         let viewer = await launchViewer(workerEnv, port);
         try {
+          const verifiedFlow = await fetch(
+            `${baseUrl}/api/internal/host/flows/verify`,
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-host-service-key": bridgeKey,
+              },
+              body: JSON.stringify({ flowId: publicFlowId }),
+            },
+          );
+          expect(verifiedFlow.status).toBe(200);
+          expect(await verifiedFlow.json()).toEqual({
+            flowId: publicFlowId,
+            valid: true,
+          });
           const startToken = signed("bi-user-a");
           signedTokens.push(startToken);
           const httpStart = await fetch(`${baseUrl}/api/internal/host/start`, {

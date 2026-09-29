@@ -10,7 +10,12 @@ import { getSession } from "@typebot.io/chat-session/queries/getSession";
 import prisma from "@typebot.io/prisma";
 import { runWithHostExecutionContext } from "@typebot.io/runtime-session-store/hostExecutionContext";
 import { z } from "zod";
-import { equal, sessionBinding, verifyHostRequest } from "./trustedContext";
+import {
+  equal,
+  sessionBinding,
+  verifyHostRequest,
+  verifyHostServiceRequest,
+} from "./trustedContext";
 
 const requestSchema = z
   .object({
@@ -21,6 +26,39 @@ const requestSchema = z
 
 const failure = () =>
   Response.json({ error: "Host bridge request rejected" }, { status: 401 });
+
+export const verifyHostFlow = async (request: Request): Promise<Response> => {
+  try {
+    verifyHostServiceRequest(request);
+    const { flowId } = z
+      .object({ flowId: z.string().min(1).max(128) })
+      .strict()
+      .parse(await request.json());
+    const publishedFlow = await prisma.publicTypebot.findFirst({
+      where: { typebot: { publicId: flowId } },
+      select: {
+        version: true,
+        typebot: {
+          select: {
+            isClosed: true,
+            isArchived: true,
+            workspace: { select: { isSuspended: true } },
+          },
+        },
+      },
+    });
+    if (
+      !publishedFlow?.version ||
+      publishedFlow.typebot.isClosed ||
+      publishedFlow.typebot.isArchived ||
+      publishedFlow.typebot.workspace.isSuspended
+    )
+      return Response.json({ valid: false }, { status: 404 });
+    return Response.json({ flowId, valid: true });
+  } catch {
+    return failure();
+  }
+};
 
 export const startHostChat = async (request: Request): Promise<Response> => {
   try {
@@ -66,13 +104,19 @@ export const continueHostChat = async (
         select: { id: true, typebotId: true },
       }),
     ]);
+    if (!session?.state || !publishedFlow)
+      return Response.json(
+        { error: "Host session unavailable" },
+        { status: 404 },
+      );
     if (
-      !session?.state ||
-      !publishedFlow ||
       session.state.publicTypebotId !== publishedFlow.id ||
       session.state.typebotsQueue[0]?.typebot.id !== publishedFlow.typebotId
     )
-      return failure();
+      return Response.json(
+        { error: "Host session unavailable" },
+        { status: 404 },
+      );
     const input = continueChatInputSchema.parse({
       sessionId,
       message: body.message,

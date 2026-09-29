@@ -2,8 +2,29 @@ import { expect, it, mock } from "bun:test";
 import { createHmac } from "node:crypto";
 import { getHostExecutionContext } from "@typebot.io/runtime-session-store/hostExecutionContext";
 import { z } from "zod";
+import { sessionBinding, verifyHostRequest } from "./trustedContext";
 
 const seen: string[] = [];
+let hasPersistedSession = true;
+let publishedFlow: {
+  id: string;
+  typebotId: string;
+  version: string | null;
+  typebot: {
+    isClosed: boolean;
+    isArchived: boolean;
+    workspace: { isSuspended: boolean };
+  };
+} | null = {
+  id: "published-a",
+  typebotId: "typebot-a",
+  version: "6.1",
+  typebot: {
+    isClosed: false,
+    isArchived: false,
+    workspace: { isSuspended: false },
+  },
+};
 mock.module("@typebot.io/bot-engine/api/handleStartChat", () => ({
   startChatInputSchema: z
     .object({ publicId: z.string(), message: z.unknown().optional() })
@@ -26,22 +47,25 @@ mock.module("@typebot.io/bot-engine/api/handleContinueChat", () => ({
   },
 }));
 mock.module("@typebot.io/chat-session/queries/getSession", () => ({
-  getSession: async () => ({
-    state: {
-      publicTypebotId: "published-a",
-      typebotsQueue: [{ typebot: { id: "typebot-a" } }],
+  getSession: async () =>
+    hasPersistedSession && {
+      state: {
+        publicTypebotId: "published-a",
+        typebotsQueue: [{ typebot: { id: "typebot-a" } }],
+      },
     },
-  }),
 }));
 mock.module("@typebot.io/prisma", () => ({
   default: {
     publicTypebot: {
-      findFirst: async () => ({ id: "published-a", typebotId: "typebot-a" }),
+      findFirst: async () => publishedFlow,
     },
   },
 }));
 
-const { startHostChat, continueHostChat } = await import("./bridge");
+const { startHostChat, continueHostChat, verifyHostFlow } = await import(
+  "./bridge"
+);
 const signingKey = "test-signing-key-with-at-least-32-bytes";
 process.env.HOST_BRIDGE_SERVICE_KEY = "bridge-service-secret";
 process.env.HOST_EXECUTION_CONTEXT_SIGNING_KEY = signingKey;
@@ -73,6 +97,47 @@ const request = (binding?: string) =>
     },
     body: JSON.stringify({ flowId: "flow-a" }),
   });
+
+const verificationRequest = (serviceKey = "bridge-service-secret") =>
+  new Request("http://localhost/api/internal/host/flows/verify", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-host-service-key": serviceKey,
+    },
+    body: JSON.stringify({ flowId: "flow-a" }),
+  });
+
+it("verifies only published, open, available Host flows with service auth", async () => {
+  const response = await verifyHostFlow(verificationRequest());
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ flowId: "flow-a", valid: true });
+
+  publishedFlow = null;
+  expect((await verifyHostFlow(verificationRequest())).status).toBe(404);
+  publishedFlow = {
+    id: "published-a",
+    typebotId: "typebot-a",
+    version: "6.1",
+    typebot: {
+      isClosed: true,
+      isArchived: false,
+      workspace: { isSuspended: false },
+    },
+  };
+  expect((await verifyHostFlow(verificationRequest())).status).toBe(404);
+  expect((await verifyHostFlow(verificationRequest("wrong"))).status).toBe(401);
+  publishedFlow = {
+    id: "published-a",
+    typebotId: "typebot-a",
+    version: "6.1",
+    typebot: {
+      isClosed: false,
+      isArchived: false,
+      workspace: { isSuspended: false },
+    },
+  };
+});
 
 it("starts and continues with request-only context and an opaque session binding", async () => {
   const token = signed();
@@ -107,5 +172,25 @@ it("rejects continuation without a matching session binding and never logs crede
     expect(logged).toEqual([]);
   } finally {
     console.error = error;
+  }
+});
+
+it("returns a controlled not-found for missing persisted Host sessions", async () => {
+  hasPersistedSession = false;
+  try {
+    const validBinding = sessionBinding(
+      "missing-session",
+      verifyHostRequest(request()).envelope,
+    );
+    const response = await continueHostChat(
+      request(validBinding),
+      "missing-session",
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "Host session unavailable",
+    });
+  } finally {
+    hasPersistedSession = true;
   }
 });
