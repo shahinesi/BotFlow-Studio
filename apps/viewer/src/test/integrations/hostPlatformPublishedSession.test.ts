@@ -575,7 +575,218 @@ integrationTest(
               where: { id: startedHttp.sessionId },
             }),
           ).toBeNull();
+
+          const choiceTypebotId = `phase1b-choice-typebot-${id}`;
+          const choiceFlowId = `phase1b-choice-${id}`;
+          const choiceEvent = {
+            id: `choice-event-${id}`,
+            type: "start",
+            graphCoordinates: { x: 0, y: 0 },
+            outgoingEdgeId: `choice-start-edge-${id}`,
+          };
+          const choiceBlockId = `choice-input-${id}`;
+          const firstItemId = `choice-first-${id}`;
+          const secondItemId = `choice-second-${id}`;
+          const firstEdgeId = `choice-first-edge-${id}`;
+          const secondEdgeId = `choice-second-edge-${id}`;
+          const answerVariableId = `choice-answer-${id}`;
+          const choiceGraph = {
+            version: "6.1",
+            events: [choiceEvent],
+            groups: [
+              {
+                id: `choice-prompt-group-${id}`,
+                title: "Choice prompt",
+                graphCoordinates: { x: 100, y: 0 },
+                blocks: [
+                  textBlock(`choice-prompt-${id}`, "یک گزینه انتخاب کنید"),
+                  {
+                    id: choiceBlockId,
+                    type: "choice input",
+                    options: { variableId: answerVariableId },
+                    items: [
+                      {
+                        id: firstItemId,
+                        content: "گزینه اول",
+                        value: "option_1",
+                        outgoingEdgeId: firstEdgeId,
+                      },
+                      {
+                        id: secondItemId,
+                        content: "گزینه دوم",
+                        value: "option_2",
+                        outgoingEdgeId: secondEdgeId,
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                id: `choice-first-group-${id}`,
+                title: "First result",
+                graphCoordinates: { x: 400, y: -100 },
+                blocks: [
+                  textBlock(`choice-first-result-${id}`, "نتیجه: {{answer}}"),
+                ],
+              },
+              {
+                id: `choice-second-group-${id}`,
+                title: "Second result",
+                graphCoordinates: { x: 400, y: 100 },
+                blocks: [
+                  textBlock(`choice-second-result-${id}`, "نتیجه: {{answer}}"),
+                ],
+              },
+            ],
+            edges: [
+              {
+                id: choiceEvent.outgoingEdgeId,
+                from: { eventId: choiceEvent.id },
+                to: { groupId: `choice-prompt-group-${id}` },
+              },
+              {
+                id: firstEdgeId,
+                from: { blockId: choiceBlockId, itemId: firstItemId },
+                to: { groupId: `choice-first-group-${id}` },
+              },
+              {
+                id: secondEdgeId,
+                from: { blockId: choiceBlockId, itemId: secondItemId },
+                to: { groupId: `choice-second-group-${id}` },
+              },
+            ],
+            variables: [{ id: answerVariableId, name: "answer" }],
+            theme: {},
+            settings: {},
+          };
+          await prisma.typebot.create({
+            data: {
+              id: choiceTypebotId,
+              publicId: choiceFlowId,
+              workspaceId,
+              name: "Published Choice integration fixture",
+              ...choiceGraph,
+            },
+          });
+          expect(
+            (await publish(databaseUrl, choiceTypebotId, userId)).message,
+          ).toBe("success");
+          const publishedChoice = await prisma.publicTypebot.findUniqueOrThrow({
+            where: { typebotId: choiceTypebotId },
+          });
+          await prisma.publicTypebot.update({
+            where: { id: publishedChoice.id },
+            data: { lastActivityAt: new Date() },
+          });
+
+          const choiceToken = signed("bi-user-a", {
+            flowId: choiceFlowId,
+          });
+          signedTokens.push(choiceToken);
+          const choiceStartResponse = await fetch(
+            `${baseUrl}/api/internal/host/start`,
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-host-service-key": bridgeKey,
+                "x-host-execution-context": choiceToken,
+              },
+              body: JSON.stringify({ flowId: choiceFlowId }),
+            },
+          );
+          expect(choiceStartResponse.status).toBe(200);
+          const choiceStarted = await choiceStartResponse.json();
+          expect(JSON.stringify(choiceStarted.messages)).toContain(
+            "یک گزینه انتخاب کنید",
+          );
+          expect(choiceStarted.input).toMatchObject({
+            type: "choice input",
+            items: [
+              { content: "گزینه اول", value: "option_1" },
+              { content: "گزینه دوم", value: "option_2" },
+            ],
+          });
+          const choiceSessionId = choiceStarted.sessionId as string;
+          expect(
+            await prisma.chatSession.findUnique({
+              where: { id: choiceSessionId },
+            }),
+          ).not.toBeNull();
+
+          const invalidChoiceToken = signed("bi-user-a", {
+            flowId: choiceFlowId,
+          });
+          signedTokens.push(invalidChoiceToken);
+          const invalidChoice = await fetch(
+            `${baseUrl}/api/internal/host/sessions/${choiceSessionId}/continue`,
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-host-service-key": bridgeKey,
+                "x-host-execution-context": invalidChoiceToken,
+                "x-host-session-binding": choiceStarted.sessionBinding,
+              },
+              body: JSON.stringify({
+                flowId: choiceFlowId,
+                message: "گزینه نامعتبر",
+              }),
+            },
+          );
+          expect(invalidChoice.status).toBe(200);
+          const invalidChoiceResult = await invalidChoice.json();
+          expect(invalidChoiceResult.input?.id).toBe(choiceBlockId);
+          expect(
+            await prisma.chatSession.findUnique({
+              where: { id: choiceSessionId },
+            }),
+          ).not.toBeNull();
+
+          const validChoiceToken = signed("bi-user-a", {
+            flowId: choiceFlowId,
+          });
+          signedTokens.push(validChoiceToken);
+          const choiceContinue = await fetch(
+            `${baseUrl}/api/internal/host/sessions/${choiceSessionId}/continue`,
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-host-service-key": bridgeKey,
+                "x-host-execution-context": validChoiceToken,
+                "x-host-session-binding": choiceStarted.sessionBinding,
+              },
+              body: JSON.stringify({
+                flowId: choiceFlowId,
+                message: "گزینه اول",
+              }),
+            },
+          );
+          expect(choiceContinue.status).toBe(200);
+          const choiceCompleted = await choiceContinue.json();
+          expect(JSON.stringify(choiceCompleted)).toContain("نتیجه: option_1");
+          expect(JSON.stringify(choiceCompleted)).not.toContain(
+            "نتیجه: option_2",
+          );
+          expect(
+            await prisma.chatSession.findUnique({
+              where: { id: choiceSessionId },
+            }),
+          ).toBeNull();
           console.log(JSON.stringify({ httpSessionId: startedHttp.sessionId }));
+          console.log(
+            JSON.stringify({
+              choicePublicFlowId: choiceFlowId,
+              choiceTypebotId,
+              choiceSessionId,
+              choiceLabel: "گزینه اول",
+              choiceValue: "option_1",
+              choiceEdgeId: firstEdgeId,
+              invalidChoice: "session remained at choice input",
+              choiceCompletion: "first option branch completed",
+            }),
+          );
         } finally {
           await stopViewer(viewer, [bridgeKey, actionKey, signingKey]);
         }
