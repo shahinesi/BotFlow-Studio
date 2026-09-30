@@ -7,18 +7,37 @@ import { WorkspaceRole } from "@typebot.io/prisma/enum";
 
 const originalBaseUrl = process.env.HOST_API_BASE_URL;
 const originalServiceKey = process.env.HOST_SERVICE_AUTH_KEY;
+const originalDatabaseUrl = process.env.DATABASE_URL;
 const databaseUrl = process.env.BOTFLOW_PHASE2D_DATABASE_URL;
 const serviceKey = `phase2d-host-key-${randomUUID()}`;
-const disposableUrl = (value: string | undefined) => {
+const disposableTarget = (value: string | undefined) => {
   if (!value) return false;
-  const url = new URL(value);
-  return (
-    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
-    url.pathname.startsWith("/botflow_phase2d_")
-  );
+  try {
+    const url = new URL(value);
+    const databaseName = decodeURIComponent(url.pathname.slice(1));
+    return ["localhost", "127.0.0.1", "::1"].includes(url.hostname)
+      ? { host: url.hostname, port: url.port || "5432", databaseName }
+      : false;
+  } catch {
+    return false;
+  }
 };
+const intendedTarget = disposableTarget(databaseUrl);
+const runtimeTarget = disposableTarget(process.env.DATABASE_URL);
+if (
+  databaseUrl &&
+  (!intendedTarget ||
+    !runtimeTarget ||
+    !intendedTarget.databaseName.startsWith("botflow_phase2d_") ||
+    intendedTarget.host !== runtimeTarget.host ||
+    intendedTarget.port !== runtimeTarget.port ||
+    intendedTarget.databaseName !== runtimeTarget.databaseName)
+)
+  throw new Error(
+    "Phase 2D integration requires DATABASE_URL and BOTFLOW_PHASE2D_DATABASE_URL to target the same local disposable database.",
+  );
 const nodeBinary = process.env.BOTFLOW_PHASE2D_NODE_BINARY;
-const integrationTest = disposableUrl(databaseUrl) && nodeBinary ? it : it.skip;
+const integrationTest = intendedTarget && nodeBinary ? it : it.skip;
 let server: Server | undefined;
 let prisma: Awaited<typeof import("@typebot.io/prisma")>["default"];
 let importedTypebotId: string | undefined;
@@ -118,6 +137,7 @@ integrationTest(
   "imports a generic Host template as an independent editable Typebot in disposable PostgreSQL",
   async () => {
     if (!databaseUrl) throw new Error("Disposable database URL is missing.");
+    process.env.DATABASE_URL = databaseUrl;
     process.env.HOST_SERVICE_AUTH_KEY = serviceKey;
     prisma = (await import("@typebot.io/prisma")).default;
     const { handleImportTypebot, importTypebotInputSchema } = await import(
@@ -276,4 +296,5 @@ afterAll(async () => {
   }
   process.env.HOST_API_BASE_URL = originalBaseUrl;
   process.env.HOST_SERVICE_AUTH_KEY = originalServiceKey;
+  process.env.DATABASE_URL = originalDatabaseUrl;
 });
