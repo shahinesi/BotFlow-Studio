@@ -60,6 +60,51 @@ export const verifyHostFlow = async (request: Request): Promise<Response> => {
   }
 };
 
+export const getHostFlowMetadata = async (
+  request: Request,
+): Promise<Response> => {
+  try {
+    verifyHostServiceRequest(request);
+    const { flowId } = z
+      .object({ flowId: z.string().min(1).max(128) })
+      .strict()
+      .parse(await request.json());
+    const typebot = await prisma.typebot.findUnique({
+      where: { publicId: flowId },
+      select: {
+        id: true,
+        name: true,
+        updatedAt: true,
+        isClosed: true,
+        isArchived: true,
+        workspace: { select: { isSuspended: true } },
+        publishedTypebot: { select: { version: true } },
+      },
+    });
+    if (!typebot)
+      return Response.json({ error: "Flow not found" }, { status: 404 });
+    const isPublished = Boolean(typebot.publishedTypebot?.version);
+    const isAvailable =
+      isPublished &&
+      !typebot.isClosed &&
+      !typebot.isArchived &&
+      !typebot.workspace.isSuspended;
+    return Response.json({
+      publicFlowId: flowId,
+      editableFlowId: typebot.id,
+      displayName: typebot.name,
+      status: isAvailable
+        ? "PUBLISHED"
+        : isPublished
+          ? "UNAVAILABLE"
+          : "UNPUBLISHED",
+      updatedAt: typebot.updatedAt.toISOString(),
+    });
+  } catch {
+    return failure();
+  }
+};
+
 export const startHostChat = async (request: Request): Promise<Response> => {
   try {
     const trusted = verifyHostRequest(request);

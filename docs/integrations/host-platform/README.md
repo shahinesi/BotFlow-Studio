@@ -17,6 +17,7 @@ flowchart LR
 The private viewer routes are:
 
 - `POST /api/internal/host/flows/verify` with `{ "flowId": "published-flow-id" }`. This service-authenticated endpoint confirms that an open, published, available Flow exists; it does not return Flow data.
+- `POST /api/internal/host/flows/metadata` with `{ "flowId": "published-flow-id" }`. This service-authenticated management endpoint returns only publication status, display name, update time, the public ID and the related editable Typebot ID; it never returns graph/session data. Its status does not authorize runtime execution.
 - `POST /api/internal/host/start` with `{ "flowId": "published-flow-id", "message": "optional" }`
 - `POST /api/internal/host/sessions/:sessionId/continue` with `{ "flowId": "published-flow-id", "message": "input" }`
 

@@ -25,6 +25,24 @@ let publishedFlow: {
     workspace: { isSuspended: false },
   },
 };
+let editableTypebot: {
+  id: string;
+  name: string;
+  updatedAt: Date;
+  isClosed: boolean;
+  isArchived: boolean;
+  workspace: { isSuspended: boolean };
+  publishedTypebot: { version: string | null } | null;
+} | null = {
+  id: "draft-a",
+  name: "Example Flow",
+  updatedAt: new Date("2026-09-30T08:00:00.000Z"),
+  isClosed: false,
+  isArchived: false,
+  workspace: { isSuspended: false },
+  publishedTypebot: { version: "6.1" },
+};
+const typebotFindUnique = mock(async () => editableTypebot);
 mock.module("@typebot.io/bot-engine/api/handleStartChat", () => ({
   startChatInputSchema: z
     .object({ publicId: z.string(), message: z.unknown().optional() })
@@ -60,12 +78,14 @@ mock.module("@typebot.io/prisma", () => ({
     publicTypebot: {
       findFirst: async () => publishedFlow,
     },
+    typebot: {
+      findUnique: typebotFindUnique,
+    },
   },
 }));
 
-const { startHostChat, continueHostChat, verifyHostFlow } = await import(
-  "./bridge"
-);
+const { startHostChat, continueHostChat, verifyHostFlow, getHostFlowMetadata } =
+  await import("./bridge");
 const signingKey = "test-signing-key-with-at-least-32-bytes";
 process.env.HOST_BRIDGE_SERVICE_KEY = "bridge-service-secret";
 process.env.HOST_EXECUTION_CONTEXT_SIGNING_KEY = signingKey;
@@ -108,6 +128,16 @@ const verificationRequest = (serviceKey = "bridge-service-secret") =>
     body: JSON.stringify({ flowId: "flow-a" }),
   });
 
+const metadataRequest = (serviceKey = "bridge-service-secret") =>
+  new Request("http://localhost/api/internal/host/flows/metadata", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-host-service-key": serviceKey,
+    },
+    body: JSON.stringify({ flowId: "flow-a" }),
+  });
+
 it("verifies only published, open, available Host flows with service auth", async () => {
   const response = await verifyHostFlow(verificationRequest());
   expect(response.status).toBe(200);
@@ -136,6 +166,55 @@ it("verifies only published, open, available Host flows with service auth", asyn
       isArchived: false,
       workspace: { isSuspended: false },
     },
+  };
+});
+
+it("returns generic Flow metadata and the real editable ID without graph data", async () => {
+  typebotFindUnique.mockClear();
+  const response = await getHostFlowMetadata(metadataRequest());
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    publicFlowId: "flow-a",
+    editableFlowId: "draft-a",
+    displayName: "Example Flow",
+    status: "PUBLISHED",
+    updatedAt: "2026-09-30T08:00:00.000Z",
+  });
+  expect(typebotFindUnique).toHaveBeenCalledWith({
+    where: { publicId: "flow-a" },
+    select: {
+      id: true,
+      name: true,
+      updatedAt: true,
+      isClosed: true,
+      isArchived: true,
+      workspace: { select: { isSuspended: true } },
+      publishedTypebot: { select: { version: true } },
+    },
+  });
+
+  editableTypebot = { ...editableTypebot!, publishedTypebot: null };
+  expect(
+    await (await getHostFlowMetadata(metadataRequest())).json(),
+  ).toMatchObject({
+    publicFlowId: "flow-a",
+    editableFlowId: "draft-a",
+    status: "UNPUBLISHED",
+  });
+
+  editableTypebot = null;
+  expect((await getHostFlowMetadata(metadataRequest())).status).toBe(404);
+  expect((await getHostFlowMetadata(metadataRequest("wrong"))).status).toBe(
+    401,
+  );
+  editableTypebot = {
+    id: "draft-a",
+    name: "Example Flow",
+    updatedAt: new Date("2026-09-30T08:00:00.000Z"),
+    isClosed: false,
+    isArchived: false,
+    workspace: { isSuspended: false },
+    publishedTypebot: { version: "6.1" },
   };
 });
 
