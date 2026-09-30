@@ -2,6 +2,8 @@
 
 BotFlow Studio is a reusable low-code bot engine. Read [Host Platform Integration](docs/integrations/host-platform/README.md) and [upstream policy](UPSTREAM_SYNC.md). ShahrFarsh is one Host example, not a dependency of the engine. Keep `main` upstream-tracking; custom work belongs on an integration branch. A Host owns its users, auth, permissions, data, transport and business Actions; BotFlow owns flow graphs, published snapshots and Flow Sessions. Do not add project-specific business logic, user models, permission policy, DB access or transport rules here. Do not put Host authorization material in Flow variables/JSON, change upstream bot-engine semantics for a bridge, hand-edit generated Forge repository maps, or share a Host DB.
 
+The generic Host Action Catalog is server-fetched Builder metadata only. Keep Host service credentials in server environment, never return them to browser responses, and never treat Catalog visibility as runtime permission. Runtime Actions continue through the Host Gateway on every execution.
+
 ## Project Structure & Module Organization
 
 This is a Nx monorepo with Bun package manager.

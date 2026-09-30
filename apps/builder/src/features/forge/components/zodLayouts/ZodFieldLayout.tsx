@@ -296,6 +296,7 @@ export const ZodFieldLayout = ({
               credentialsScope="workspace"
               onChange={onDataChange}
               withVariableButton={layout.withVariableButton ?? true}
+              searchable={layout.inputType === "fetcherAutocomplete"}
             />
             {layout?.helperText && (
               <Field.Description>

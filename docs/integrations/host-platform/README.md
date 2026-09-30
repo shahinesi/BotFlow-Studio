@@ -61,8 +61,36 @@ Implement the same Host contract in the application:
 4. Return a controlled text result for the current supported subset.
 5. Configure the deployment's Host API URL and distinct service credentials. No BotFlow code, Forge core, or engine traversal change is needed for a new Host.
 
-There is no dynamic Action Catalog yet. The first live gateway example and published-session regression are documented in [the ShahrFarsh example](examples/shahrfarsh.md). This is a contract example, not a dependency of the Host bridge.
+## Action Catalog
+
+The Builder's generic Host Action selector fetches `GET /internal/host/actions/catalog` from the configured Host. The request is made by the Builder server using `HOST_API_BASE_URL` and `HOST_SERVICE_AUTH_KEY`; these values must exist only in server environment configuration. The selector receives metadata only:
+
+```json
+{
+  "actions": [
+    {
+      "key": "system.whoami",
+      "title": "Current Bot User",
+      "description": "Returns a controlled summary of the admitted user and platform.",
+      "inputs": [],
+      "outputs": [{ "key": "text", "type": "string" }]
+    }
+  ]
+}
+```
+
+Each input/output type is a primitive (`string`, `number`, or `boolean`); an input may also declare `required`. The searchable selector matches the displayed title, key and description, and shows schema hints. Flow values are mapped through the block's simple key/type/value rows. The Host owns and registers safe, displayable metadata beside its Action implementation; it must not include secrets or user-specific data. BotFlow stores no catalog rows. A Host can add Actions without a BotFlow source change.
+
+Catalog data is only Builder metadata. It neither invokes an Action nor grants a user permission. Runtime continues to post the saved `actionKey` to `/internal/host/actions/:actionKey`; the Host reloads identity and applies its existing binding, policy and allowlist checks. A removed Action remains visible as an unavailable saved key when editing, and runtime continues to fail closed. Existing manually saved keys remain schema-compatible.
+
+When the Catalog cannot be reached, the Builder remains usable, reports a local retry state, and does not expose service credentials. Published runtime execution does not call or depend on the Catalog endpoint. The fetch uses the existing short request timeout and no polling; Builder's query cache controls refresh.
+
+The ShahrFarsh implementation is a Host example in [its integration evidence](examples/shahrfarsh.md), not a BotFlow dependency. Its registered `system.whoami` metadata is served by its authenticated Host endpoint.
 
 ## Verification status
 
-The Host bridge, Flow verification, request-scope isolation, generic block invocation, public fail-closed behavior, and synthetic Host Gateway contract have targeted tests. On 2026-09-29, the opt-in published-flow regression passed against a new local disposable PostgreSQL database after building the viewer: official migrations, actual publish, real `ChatSession`, Flow pause, process restart, same-session continue/completion, context/credential leak scan, session isolation, and public fail-closed checks. This test uses a synthetic Host gateway and identity; it is not production channel acceptance. Production routing remains planned.
+The Host bridge, Flow verification, request-scope isolation, generic block invocation, public fail-closed behavior, synthetic Host Gateway contract, and metadata-only catalog fetch have targeted tests. On 2026-09-29, the opt-in published-flow regression passed against a new local disposable PostgreSQL database after building the viewer: official migrations, actual publish, real `ChatSession`, Flow pause, process restart, same-session continue/completion, context/credential leak scan, session isolation, and public fail-closed checks. This test uses a synthetic Host gateway and identity; it is not production channel acceptance. Production routing remains planned.
+
+## Adding a Host Action
+
+Implement and register the Action in the Host, add its safe `title`, `description`, primitive input definitions and controlled output hints to the Action metadata, then expose the registered metadata through the authenticated catalog endpoint. The Builder selector discovers it automatically. Runtime still resolves the same stable `actionKey` through the Host Gateway; changing/removing a key requires deliberate Host-side compatibility handling. No BotFlow block, Forge core or engine change is needed for a new Host capability.

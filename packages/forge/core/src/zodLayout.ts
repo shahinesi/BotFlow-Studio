@@ -3,7 +3,12 @@ import type { z } from "zod";
 export type ZodLayoutMetadata<TDefaultValue = unknown> = {
   accordion?: string;
   label?: string;
-  inputType?: "variableDropdown" | "textarea" | "password" | "code";
+  inputType?:
+    | "variableDropdown"
+    | "textarea"
+    | "password"
+    | "code"
+    | "fetcherAutocomplete";
   lang?: "js" | "html" | "css" | "json";
   defaultValue?: TDefaultValue;
   placeholder?: string;
