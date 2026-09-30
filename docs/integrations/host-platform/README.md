@@ -88,6 +88,42 @@ When the Catalog cannot be reached, the Builder remains usable, reports a local 
 
 The ShahrFarsh implementation is a Host example in [its integration evidence](examples/shahrfarsh.md), not a BotFlow dependency. Its registered `system.whoami` metadata is served by its authenticated Host endpoint.
 
+## Host Template Catalog
+
+Hosts may also own source-controlled Typebot starter definitions. The generic Host contract is:
+
+- `GET /internal/host/templates` returns `{ "templates": [{ "key", "name", "description" }] }` for the existing Builder picker.
+- `GET /internal/host/templates/:key` returns the selected metadata and a Typebot definition.
+
+Both requests use the existing server-only `HOST_API_BASE_URL` and `HOST_SERVICE_AUTH_KEY` configuration and the `x-host-service-key` header. The Builder server exposes only catalog metadata to the browser. It fetches a definition only while creating a selected template; the definition is validated by Typebot's existing import schema and then passed through the normal `importTypebot` handler, workspace authorization, migrations, sanitizers and database create operation. Host Action references are checked against the Host Action Catalog when present. Invalid definitions or stale Action keys fail before Typebot creation.
+
+```mermaid
+sequenceDiagram
+  participant Browser as Builder browser
+  participant Builder as Builder server
+  participant Host as Host Application
+  participant Import as Typebot importTypebot
+  Browser->>Builder: listHostTemplates (authenticated)
+  Builder->>Host: GET /internal/host/templates + service key
+  Host-->>Builder: safe metadata
+  Builder-->>Browser: metadata only
+  Browser->>Builder: importTypebot(hostTemplateKey, workspaceId)
+  Builder->>Host: GET selected Typebot definition + service key
+  Builder->>Import: official schema and import path
+  Import-->>Browser: newly created editable Typebot
+```
+
+Host catalog failure is isolated to the Host section; local built-in templates remain usable. The created Typebot is a copy with no runtime link to the source template. Later Host template edits affect only future creations, and no template catalog is stored in BotFlow's database. Runtime authorization remains in the Host Action Gateway; template visibility and embedded `actionKey` values grant no permission.
+
+Another Host can add a template by implementing these two endpoints and returning a valid Typebot definition. It does not require BotFlow source changes, a database table, or custom Builder code. BotFlow does not own Host template content or business semantics.
+
+## Adding a Host Template
+
+1. Keep the definition and safe display metadata in the Host's source-controlled registry.
+2. Return only registered action keys and normal Typebot blocks; never include service credentials, signed assertions, tokens or permission claims.
+3. Validate the definition with the same Typebot version used by the deployed Builder and test the normal import path.
+4. Treat the resulting Typebot as independent; no template provenance, update propagation, marketplace or BotApp auto-binding is provided.
+
 ## Verification status
 
 The Host bridge, Flow verification, request-scope isolation, generic block invocation, public fail-closed behavior, synthetic Host Gateway contract, and metadata-only catalog fetch have targeted tests. On 2026-09-29, the opt-in published-flow regression passed against a new local disposable PostgreSQL database after building the viewer: official migrations, actual publish, real `ChatSession`, Flow pause, process restart, same-session continue/completion, context/credential leak scan, session isolation, and public fail-closed checks. This test uses a synthetic Host gateway and identity; it is not production channel acceptance. Production routing remains planned.
