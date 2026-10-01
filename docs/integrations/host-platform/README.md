@@ -128,6 +128,16 @@ Another Host can add a template by implementing these two endpoints and returnin
 
 The Host bridge, Flow verification, request-scope isolation, generic block invocation, public fail-closed behavior, synthetic Host Gateway contract, and metadata-only catalog fetch have targeted tests. On 2026-09-29, the opt-in published-flow regression passed against a new local disposable PostgreSQL database after building the viewer: official migrations, actual publish, real `ChatSession`, Flow pause, process restart, same-session continue/completion, context/credential leak scan, session isolation, and public fail-closed checks. This test uses a synthetic Host gateway and identity; it is not production channel acceptance. Production routing remains planned.
 
+## Builder identity through Custom OAuth
+
+Builder authentication uses the existing Typebot Custom OAuth OIDC provider, independently of Host Bridge service authentication. Configure `CUSTOM_OAUTH_ISSUER`, confidential `CUSTOM_OAUTH_CLIENT_ID`/`CUSTOM_OAUTH_CLIENT_SECRET`, scopes `openid profile email`, and profile paths matching the issuer (`sub`, `name`, `email` for standard claims). The callback is `${NEXTAUTH_URL}/api/auth/callback/custom-oauth`. Client secrets remain server-only.
+
+The provider validates the OIDC ID Token, state and S256 PKCE and reads profile claims from the standard UserInfo endpoint (`idToken: false` in Auth.js). An issuer need not duplicate email/profile claims inside an authorization-code ID Token. A generic callback regression covers a signed subject-only ID Token, UserInfo mapping, PKCE and invalid state.
+
+Workspace access still uses native Typebot membership. A native `MEMBER` invitation with the exact stable email claim is consumed by the existing auth adapter on first account creation; repeated login resolves the same `(provider, providerAccountId)`. Email is an invitation attribute, while the immutable OIDC subject is the identity. No Host DB access or alternate provisioning system is needed.
+
+For management handoff to private editor routes, use official `/signin` with a trusted same-origin `callbackUrl` for OAuth and a safe root-relative `redirectPath` for an already authenticated browser. The destination can be `/typebots/{editableId}/edit` or `/typebots/create`; new Flow creation uses the currently selected native workspace. Authentication does not grant arbitrary workspace/Flow access. Issuer and Builder logout are separate; no distributed logout or iframe integration is implied.
+
 ## Adding a Host Action
 
 Implement and register the Action in the Host, add its safe `title`, `description`, primitive input definitions and controlled output hints to the Action metadata, then expose the registered metadata through the authenticated catalog endpoint. The Builder selector discovers it automatically. Runtime still resolves the same stable `actionKey` through the Host Gateway; changing/removing a key requires deliberate Host-side compatibility handling. No BotFlow block, Forge core or engine change is needed for a new Host capability.
