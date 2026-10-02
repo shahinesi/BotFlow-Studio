@@ -22,6 +22,7 @@ export type GroupsActions = {
     props: Coordinates & {
       id: string;
       block: BlockV6 | BlockV6["type"];
+      blockOptions?: Record<string, unknown>;
       indices: BlockIndices;
     },
   ) => string | undefined;
@@ -53,6 +54,7 @@ const groupsActions = (setTypebot: SetTypebot): GroupsActions => ({
   createGroup: ({
     id,
     block,
+    blockOptions,
     indices,
     groupLabel,
     ...graphCoordinates
@@ -60,6 +62,7 @@ const groupsActions = (setTypebot: SetTypebot): GroupsActions => ({
     id: string;
     groupLabel?: string;
     block: BlockV6 | BlockV6["type"];
+    blockOptions?: Record<string, unknown>;
     indices: BlockIndices;
   }) => {
     let newBlockId: string | undefined;
@@ -72,7 +75,7 @@ const groupsActions = (setTypebot: SetTypebot): GroupsActions => ({
           blocks: [],
         };
         typebot.groups.push(newGroup);
-        newBlockId = createBlockDraft(typebot, block, indices);
+        newBlockId = createBlockDraft(typebot, block, indices, blockOptions);
       }),
     );
     return newBlockId;

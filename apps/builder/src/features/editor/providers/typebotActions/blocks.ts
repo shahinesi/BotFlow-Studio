@@ -20,6 +20,7 @@ export type BlocksActions = {
   createBlock: (
     block: BlockV6 | BlockV6["type"],
     indices: BlockIndices,
+    options?: Record<string, unknown>,
   ) => string | undefined;
   updateBlock: (
     indices: BlockIndices,
@@ -41,11 +42,15 @@ export type WebhookCallBacks = {
 };
 
 export const blocksAction = (setTypebot: SetTypebot): BlocksActions => ({
-  createBlock: (block: BlockV6 | BlockV6["type"], indices: BlockIndices) => {
+  createBlock: (
+    block: BlockV6 | BlockV6["type"],
+    indices: BlockIndices,
+    options?: Record<string, unknown>,
+  ) => {
     let blockId: string | undefined;
     setTypebot((typebot) =>
       produce(typebot, (typebot) => {
-        blockId = createBlockDraft(typebot, block, indices);
+        blockId = createBlockDraft(typebot, block, indices, options);
       }),
     );
     return blockId;
@@ -112,6 +117,7 @@ export const createBlockDraft = (
   typebot: Draft<TypebotV6>,
   block: BlockV6 | BlockV6["type"],
   { groupIndex, blockIndex }: BlockIndices,
+  options?: Record<string, unknown>,
 ) => {
   const blocks = typebot.groups[groupIndex].blocks;
   if (
@@ -126,7 +132,7 @@ export const createBlockDraft = (
     });
   const blockId =
     typeof block === "string"
-      ? createNewBlock(typebot, block, { groupIndex, blockIndex })
+      ? createNewBlock(typebot, block, { groupIndex, blockIndex }, options)
       : moveBlockToGroup(typebot, block, { groupIndex, blockIndex });
   removeEmptyGroups(typebot);
   return blockId;
@@ -136,8 +142,9 @@ const createNewBlock = (
   typebot: Draft<TypebotV6>,
   type: BlockV6["type"],
   { groupIndex, blockIndex }: BlockIndices,
+  options?: Record<string, unknown>,
 ) => {
-  const newBlock = parseNewBlock(type);
+  const newBlock = parseNewBlock(type, options);
   typebot.groups[groupIndex].blocks.splice(
     blockIndex ?? 0,
     0,

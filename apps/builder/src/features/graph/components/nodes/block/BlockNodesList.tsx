@@ -24,8 +24,10 @@ export const BlockNodesList = ({ blocks, groupIndex }: Props) => {
     draggedBlock,
     setDraggedBlock,
     draggedBlockType,
+    draggedBlockOptions,
     mouseOverGroup,
     setDraggedBlockType,
+    setDraggedBlockOptions,
     setMouseOverGroup,
   } = useBlockDnd();
   const { typebot, createBlock, detachBlockFromGroup } = useTypebot();
@@ -134,14 +136,16 @@ export const BlockNodesList = ({ blocks, groupIndex }: Props) => {
           groupIndex,
           blockIndex,
         },
+        draggedBlockOptions,
       );
       setDraggedBlock(undefined);
       setDraggedBlockType(undefined);
+      setDraggedBlockOptions(undefined);
       setMouseOverGroup(undefined);
       if (shouldOpenBlockSettingsOnCreation(draggedBlockType))
         setOpenedNodeId(blockId);
     },
-    [groupId, draggedBlock, draggedBlockType, groupIndex],
+    [groupId, draggedBlock, draggedBlockType, draggedBlockOptions, groupIndex],
   );
   useEffect(() => {
     window.addEventListener("pointerup", onGlobalPointerUp, {

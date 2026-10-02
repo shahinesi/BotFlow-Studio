@@ -20,6 +20,7 @@ import { useRef, useState } from "react";
 import { useDebouncedCallback } from "use-debounce";
 import { Portal } from "@/components/Portal";
 import { useBlockDnd } from "@/features/graph/providers/GraphDndProvider";
+import { hostCapabilityActionName } from "@/features/templates/helpers/hostBlockMetadata";
 import { useEventListener } from "@/hooks/useEventListener";
 import { orpc } from "@/lib/queryClient";
 import { EventCard } from "../../events/components/EventCard";
@@ -42,6 +43,7 @@ export const BlocksSideBar = () => {
   const { t } = useTranslate();
   const {
     setDraggedBlockType,
+    setDraggedBlockOptions,
     draggedBlockType,
     draggedEventType,
     setDraggedEventType,
@@ -94,7 +96,11 @@ export const BlocksSideBar = () => {
   };
   useEventListener("pointermove", handlePointerMove);
 
-  const initBlockDragging = (e: React.PointerEvent, type: BlockV6["type"]) => {
+  const initBlockDragging = (
+    e: React.PointerEvent,
+    type: BlockV6["type"],
+    options?: Record<string, unknown>,
+  ) => {
     if (!e.isPrimary || e.button !== 0) return;
     const element = e.currentTarget as HTMLElement;
     const rect = element.getBoundingClientRect();
@@ -103,6 +109,7 @@ export const BlocksSideBar = () => {
     const y = e.clientY - rect.top;
     setRelativeCoordinates({ x, y });
     setDraggedBlockType(type);
+    setDraggedBlockOptions(options);
   };
 
   const initEventDragging = (
@@ -123,6 +130,7 @@ export const BlocksSideBar = () => {
     if (!event.isPrimary) return;
     if (!draggedBlockType && !draggedEventType) return;
     setDraggedBlockType(undefined);
+    setDraggedBlockOptions(undefined);
     setDraggedEventType(undefined);
     setPosition({
       x: 0,
@@ -155,6 +163,7 @@ export const BlocksSideBar = () => {
         ? [
             {
               blockId: action.hostBlock.blockId,
+              capabilityKey: action.key,
               title: action.title,
               section: action.hostBlock.palette.section,
             },
@@ -366,7 +375,14 @@ export const BlocksSideBar = () => {
                       hostBlocks.find((block) => block.blockId === blockId)
                         ?.title
                     }
-                    onPointerDown={initBlockDragging}
+                    onPointerDown={(event, type) =>
+                      initBlockDragging(event, type, {
+                        action: hostCapabilityActionName,
+                        capabilityKey: hostBlocks.find(
+                          (block) => block.blockId === blockId,
+                        )?.capabilityKey,
+                      })
+                    }
                   />
                 ))}
               </div>

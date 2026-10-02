@@ -46,6 +46,10 @@ export const hostActionCatalogSchema = z.object({
             .max(128)
             .regex(/^[a-z0-9-]+$/)
             .optional(),
+          legacyActionNames: z
+            .array(z.string().min(1).max(120))
+            .max(10)
+            .optional(),
           palette: z
             .object({
               placement: z.enum(["integrations", "host-section"]),

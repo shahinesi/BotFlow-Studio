@@ -4,6 +4,7 @@ import {
   hostAccessChecksFetcherHandler,
   hostActionHandler,
   hostActionsFetcherHandler,
+  legacyUserAccessCheckHandler,
   userAccessCheckHandler,
 } from "./handlers";
 import { hostActionBlockSchema, userAccessCheckBlockSchema } from "./schemas";
@@ -77,6 +78,28 @@ it("parses a persisted User Access Check block without exposing provider details
   expect(parsed.success).toBe(true);
   if (parsed.success)
     expect(parsed.data.options.accessKey).toBe("cashier-report-read");
+});
+
+it("persists generic action discriminator and stable Host capability key separately from title", () => {
+  const parsed = userAccessCheckBlockSchema.safeParse({
+    id: "access-check-b",
+    type: "host-user-access-check",
+    options: {
+      action: "hostCapability",
+      capabilityKey: "identity.userAccessCheck",
+      accessKey: "cashier-report-read",
+      outputVariableId: "accessOutcome",
+    },
+  });
+  expect(parsed.success).toBe(true);
+  if (!parsed.success) return;
+  expect(parsed.data.options).toMatchObject({
+    action: "hostCapability",
+    capabilityKey: "identity.userAccessCheck",
+    accessKey: "cashier-report-read",
+    outputVariableId: "accessOutcome",
+  });
+  expect(JSON.stringify(parsed.data)).not.toContain("بررسی دسترسی کاربر");
 });
 
 it("maps primitive input types and Flow variables to JSON values", async () => {
@@ -246,6 +269,8 @@ it("executes only the configured access choice and stores a normalized result", 
     userAccessCheckHandler.server!({
       credentials: undefined,
       options: {
+        action: "hostCapability",
+        capabilityKey: "identity.userAccessCheck",
         accessKey: "feature-read",
         outputVariableId: "access-result",
       },
@@ -257,6 +282,72 @@ it("executes only the configured access choice and stores a normalized result", 
     } as never),
   );
   expect(values).toEqual(["AUTHORIZED"]);
+});
+
+it("executes a legacy title discriminator only through its unique Host stable key", async () => {
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  const calls: string[] = [];
+  globalThis.fetch = (async (url) => {
+    calls.push(String(url));
+    if (String(url).endsWith("/catalog"))
+      return Response.json({
+        actions: [
+          {
+            key: "identity.userAccessCheck",
+            hostBlock: {
+              type: "USER_ACCESS_CHECK",
+              blockId: "host-user-access-check",
+              legacyActionNames: ["بررسی دسترسی کاربر"],
+              accessChecks: [],
+              outcomes: ["AUTHORIZED"],
+            },
+          },
+        ],
+      });
+    return Response.json({ kind: "TEXT", text: "AUTHORIZED" });
+  }) as typeof fetch;
+  await runWithHostExecutionContext(trusted("signed-context"), () =>
+    legacyUserAccessCheckHandler.server!({
+      credentials: undefined,
+      options: {
+        action: "بررسی دسترسی کاربر",
+        accessKey: "cashier-report-read",
+        outputVariableId: "accessOutcome",
+      },
+      variables: { set: () => {} },
+      logs: { add: () => {} },
+    } as never),
+  );
+  expect(calls).toEqual([
+    "http://localhost:1234/internal/host/actions/catalog",
+    "http://localhost:1234/internal/host/actions/identity.userAccessCheck",
+  ]);
+});
+
+it("keeps Host actions out of real services during Builder Preview", async () => {
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    throw new Error("Preview must not call Host services");
+  }) as typeof fetch;
+  const values: string[] = [];
+  await userAccessCheckHandler.server!({
+    credentials: undefined,
+    isPreview: true,
+    options: {
+      action: "hostCapability",
+      capabilityKey: "identity.userAccessCheck",
+      accessKey: "cashier-report-read",
+      outputVariableId: "accessOutcome",
+    },
+    variables: {
+      set: (items: { value: unknown }[]) => values.push(String(items[0].value)),
+    },
+    logs: { add: () => {} },
+  } as never);
+  expect(called).toBe(false);
+  expect(values).toEqual(["VERIFICATION_REQUIRED"]);
 });
 
 it("rejects malformed access outcomes and does not store them", async () => {

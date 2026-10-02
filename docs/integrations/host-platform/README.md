@@ -162,7 +162,11 @@ Implement and register the Action in the Host, add its safe `title`, `descriptio
 
 Hosts may opt a registered Action into the generic `USER_ACCESS_CHECK` Forge block by attaching safe `hostBlock` metadata to that Action's catalog entry. The Builder resolves its palette label and placement from this metadata; absent metadata falls back to Integrations and the generic Host block label. Entries marked for the special block are omitted from the generic Host Action selector. No identity claim, secret or Host-specific role model is sent to the browser.
 
+The Forge `blockId` (for example, `host-user-access-check`) selects the generic renderer. Each saved block separately stores the Host-provided stable `capabilityKey` and the generic Forge action discriminator `hostCapability`. Host title, description, icon and section are presentation metadata hydrated from the current catalog; changing or translating them does not change Flow identity. A legacy Flow with a known localized action name is normalized only when the catalog provides exactly one explicit matching alias for that block. Unknown or ambiguous keys remain intact and display «قابلیت میزبان در دسترس نیست».
+
 The block stores a Host choice and a result variable. Its runtime uses the normal signed execution context and Host Action Gateway; the Host re-resolves identity and permission on every invocation. Flow authors branch using Typebot's built-in Condition block on the normalized result (`AUTHORIZED`, `DENIED`, `ACCOUNT_NOT_FOUND`, `VERIFICATION_REQUIRED`, or `ERROR`). BotFlow does not authorize locally. A future Host Block can add a new generic Forge block and a safe catalog descriptor in the existing Host integration package without changing Forge core or the Flow engine; no category framework is implied.
+
+Builder Preview does not have a real BotUser or signed Host execution context. Host Actions are therefore skipped in Preview; Access Check yields the safe preview outcome `VERIFICATION_REQUIRED`. This keeps preview usable without weakening runtime identity or calling business services with synthetic identity.
 
 ### Host palette section metadata
 

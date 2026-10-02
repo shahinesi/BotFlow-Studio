@@ -4,6 +4,8 @@ import { z } from "zod";
 import { hostAction, hostActionsFetcher } from "./hostAction";
 import {
   hostAccessChecksFetcher,
+  legacyUserAccessCheckAction,
+  legacyUserAccessCheckActionName,
   userAccessCheckAction,
 } from "./userAccessCheck";
 
@@ -17,6 +19,8 @@ const accessOutcomeSchema = z.enum([
 
 const hostBlockMetadataSchema = z.object({
   type: z.literal("USER_ACCESS_CHECK"),
+  blockId: z.string().min(1).max(128).optional(),
+  legacyActionNames: z.array(z.string().min(1).max(120)).max(10).optional(),
   accessChecks: z
     .array(
       z.object({
@@ -67,7 +71,21 @@ const hostCatalogSchema = z.object({
 });
 
 export const hostActionHandler = createActionHandler(hostAction, {
-  server: async ({ options, variables, logs }) => {
+  server: async ({ isPreview, options, variables, logs }) => {
+    if (isPreview) {
+      if (options.outputVariableId)
+        variables.set([
+          {
+            id: options.outputVariableId,
+            value: "Host Action skipped in Preview",
+          },
+        ]);
+      logs.add({
+        status: "info",
+        description: "Host Actions are not executed in Builder Preview.",
+      });
+      return;
+    }
     try {
       const trusted = getHostExecutionContext();
       const baseUrl = process.env.HOST_API_BASE_URL;
@@ -180,10 +198,23 @@ export const hostActionsFetcherHandler = createFetcherHandler(
   },
 );
 
-export const userAccessCheckHandler = createActionHandler(
-  userAccessCheckAction,
-  {
-    server: async ({ options, variables, logs }) => {
+const createUserAccessCheckHandler = (
+  action: typeof userAccessCheckAction | typeof legacyUserAccessCheckAction,
+  legacy = false,
+) =>
+  createActionHandler(action, {
+    server: async ({ isPreview, options, variables, logs }) => {
+      if (isPreview) {
+        if (options.outputVariableId)
+          variables.set([
+            { id: options.outputVariableId, value: "VERIFICATION_REQUIRED" },
+          ]);
+        logs.add({
+          status: "info",
+          description: "Host access checks require a real Bot runtime.",
+        });
+        return;
+      }
       try {
         const trusted = getHostExecutionContext();
         const baseUrl = process.env.HOST_API_BASE_URL;
@@ -192,8 +223,26 @@ export const userAccessCheckHandler = createActionHandler(
         if (!baseUrl || !serviceKey || !accessKey)
           throw new Error("Host access check unavailable");
 
+        let capabilityKey = options.capabilityKey?.trim();
+        if (!capabilityKey && legacy) {
+          const catalog = await fetchHostCatalog(baseUrl, serviceKey);
+          const matches =
+            catalog?.actions.filter(
+              (candidate) =>
+                candidate.hostBlock?.type === "USER_ACCESS_CHECK" &&
+                candidate.hostBlock.legacyActionNames?.includes(
+                  legacyUserAccessCheckActionName,
+                ),
+            ) ?? [];
+          if (matches.length === 1) capabilityKey = matches[0].key;
+        }
+        if (!capabilityKey) throw new Error("Host access check unavailable");
+
         const response = await fetch(
-          new URL("/internal/host/actions/identity.userAccessCheck", baseUrl),
+          new URL(
+            `/internal/host/actions/${encodeURIComponent(capabilityKey)}`,
+            baseUrl,
+          ),
           {
             method: "POST",
             headers: {
@@ -224,8 +273,35 @@ export const userAccessCheckHandler = createActionHandler(
         throw new Error("Host access check unavailable");
       }
     },
-  },
+  });
+
+export const userAccessCheckHandler = createUserAccessCheckHandler(
+  userAccessCheckAction,
 );
+export const legacyUserAccessCheckHandler = createUserAccessCheckHandler(
+  legacyUserAccessCheckAction,
+  true,
+);
+
+const fetchHostCatalog = async (baseUrl: string, serviceKey: string) => {
+  try {
+    const response = await fetch(
+      new URL("/internal/host/actions/catalog", baseUrl),
+      {
+        headers: { "x-host-service-key": serviceKey },
+        redirect: "error",
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+    if (!response.ok) return undefined;
+    const parsed = userAccessCheckCatalogSchema.safeParse(
+      await response.json(),
+    );
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export const hostAccessChecksFetcherHandler = createFetcherHandler(
   userAccessCheckAction,
@@ -237,22 +313,10 @@ export const hostAccessChecksFetcherHandler = createFetcherHandler(
       return { error: { description: "Host access options unavailable" } };
 
     try {
-      const response = await fetch(
-        new URL("/internal/host/actions/catalog", baseUrl),
-        {
-          headers: { "x-host-service-key": serviceKey },
-          redirect: "error",
-          signal: AbortSignal.timeout(5000),
-        },
-      );
-      if (!response.ok)
+      const parsed = await fetchHostCatalog(baseUrl, serviceKey);
+      if (!parsed)
         return { error: { description: "Host access options unavailable" } };
-      const parsed = userAccessCheckCatalogSchema.safeParse(
-        await response.json(),
-      );
-      if (!parsed.success)
-        return { error: { description: "Host access options unavailable" } };
-      const checks = parsed.data.actions.flatMap((action) =>
+      const checks = parsed.actions.flatMap((action) =>
         action.hostBlock?.type === "USER_ACCESS_CHECK"
           ? action.hostBlock.accessChecks
           : [],
@@ -276,4 +340,5 @@ export default [
   hostActionHandler,
   hostAccessChecksFetcherHandler,
   userAccessCheckHandler,
+  legacyUserAccessCheckHandler,
 ];

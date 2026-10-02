@@ -1,4 +1,5 @@
 import { afterEach, expect, it } from "bun:test";
+import { findHostBlockAction } from "../helpers/hostBlockMetadata";
 import {
   assertHostTemplateActionsAvailable,
   getHostActionCatalog,
@@ -14,6 +15,80 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   process.env.HOST_API_BASE_URL = originalBaseUrl;
   process.env.HOST_SERVICE_AUTH_KEY = originalServiceKey;
+});
+
+it("resolves stable Host block identity independently from presentation metadata", () => {
+  const flowOptions = {
+    action: "hostCapability",
+    capabilityKey: "identity.userAccessCheck",
+    accessKey: "cashier-report-read",
+    outputVariableId: "accessOutcome",
+  };
+  const action = {
+    key: flowOptions.capabilityKey,
+    title: "بررسی دسترسی کاربر",
+    description: "Checks access.",
+    inputs: [],
+    outputs: [],
+    hostBlock: { type: "USER_ACCESS_CHECK", blockId: "host-user-access-check" },
+  };
+  const renamed = { ...action, title: "کنترل دسترسی کاربر" };
+  const localized = { ...action, title: "User Access Check" };
+
+  expect(
+    findHostBlockAction([renamed], {
+      blockType: "host-user-access-check",
+      capabilityKey: flowOptions.capabilityKey,
+    }),
+  ).toMatchObject({
+    key: flowOptions.capabilityKey,
+    title: "کنترل دسترسی کاربر",
+  });
+  expect(
+    findHostBlockAction([localized], {
+      blockType: "host-user-access-check",
+      capabilityKey: flowOptions.capabilityKey,
+    })?.title,
+  ).toBe("User Access Check");
+  expect(flowOptions).toEqual({
+    action: "hostCapability",
+    capabilityKey: "identity.userAccessCheck",
+    accessKey: "cashier-report-read",
+    outputVariableId: "accessOutcome",
+  });
+  expect(
+    findHostBlockAction([action], {
+      blockType: "host-user-access-check",
+      capabilityKey: "identity.retiredCapability",
+    }),
+  ).toBeUndefined();
+});
+
+it("normalizes only a unique explicit legacy Host action alias", () => {
+  const catalogAction = {
+    key: "identity.userAccessCheck",
+    title: "Access Check",
+    description: "Checks access.",
+    inputs: [],
+    outputs: [],
+    hostBlock: {
+      type: "USER_ACCESS_CHECK",
+      blockId: "host-user-access-check",
+      legacyActionNames: ["بررسی دسترسی کاربر"],
+    },
+  };
+  expect(
+    findHostBlockAction([catalogAction], {
+      blockType: "host-user-access-check",
+      legacyActionName: "بررسی دسترسی کاربر",
+    })?.key,
+  ).toBe("identity.userAccessCheck");
+  expect(
+    findHostBlockAction([catalogAction, catalogAction], {
+      blockType: "host-user-access-check",
+      legacyActionName: "بررسی دسترسی کاربر",
+    }),
+  ).toBeUndefined();
 });
 
 const setupHost = () => {

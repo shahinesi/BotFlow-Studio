@@ -1,7 +1,13 @@
+import { useQuery } from "@tanstack/react-query";
 import type { BlockOptions } from "@typebot.io/blocks-core/schemas/schema";
 import type { ForgedBlock } from "@typebot.io/forge-repository/schemas";
 import { useOpenControls } from "@typebot.io/ui/hooks/useOpenControls";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  findHostBlockAction,
+  hostCapabilityActionName,
+} from "@/features/templates/helpers/hostBlockMetadata";
+import { orpc } from "@/lib/queryClient";
 import { useForgedBlock } from "../hooks/useForgedBlock";
 import { ForgedCredentialsCreateDialog } from "./credentials/ForgedCredentialsCreateDialog";
 import { ForgedCredentialsDropdown } from "./credentials/ForgedCredentialsDropdown";
@@ -20,6 +26,35 @@ export const ForgedBlockSettings = ({ block, onOptionsChange }: Props) => {
     action: block.options?.action,
   });
   const { isOpen, onOpen, onClose } = useOpenControls();
+  const { data: hostCatalog } = useQuery({
+    ...orpc.typebot.listHostActions.queryOptions({ input: {} }),
+    enabled:
+      (blockDef?.tags?.includes("host") ?? false) &&
+      block.options?.action !== hostCapabilityActionName &&
+      block.options?.capabilityKey === undefined,
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (
+      !blockDef?.tags?.includes("host") ||
+      block.options?.action === hostCapabilityActionName ||
+      block.options.capabilityKey !== undefined
+    )
+      return;
+    const capability = hostCatalog
+      ? findHostBlockAction(hostCatalog.actions, {
+          blockType: block.type,
+          legacyActionName: block.options.action,
+        })
+      : undefined;
+    if (!capability) return;
+    onOptionsChange({
+      ...block.options,
+      action: hostCapabilityActionName,
+      capabilityKey: capability.key,
+    });
+  }, [block, blockDef, hostCatalog, onOptionsChange]);
 
   const updateCredentialsId = (credentialsId?: string) => {
     onOptionsChange({

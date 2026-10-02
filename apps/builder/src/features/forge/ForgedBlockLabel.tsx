@@ -27,7 +27,7 @@ export const ForgedBlockLabel = ({
     <p className={cn("text-sm", className)}>
       {hostTitle ??
         (blockDef?.tags?.includes("host")
-          ? "Host capability unavailable"
+          ? "قابلیت میزبان در دسترس نیست"
           : blockDef?.name)}
       <ForgeBlockBadge badge={blockDef?.badge} className="ml-1" />
     </p>
