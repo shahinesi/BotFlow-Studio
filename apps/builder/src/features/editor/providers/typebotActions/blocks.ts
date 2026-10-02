@@ -9,8 +9,8 @@ import type {
 import type { HttpRequest } from "@typebot.io/blocks-integrations/httpRequest/schema";
 import { byId } from "@typebot.io/lib/utils";
 import type { Edge } from "@typebot.io/typebot/schemas/edge";
-import type { Typebot, TypebotV6 } from "@typebot.io/typebot/schemas/typebot";
-import { type Draft, produce } from "immer";
+import type { TypebotV6 } from "@typebot.io/typebot/schemas/typebot";
+import { castDraft, type Draft, produce } from "immer";
 import { parseNewBlock } from "@/features/typebot/helpers/parseNewBlock";
 import type { SetTypebot } from "../TypebotProvider";
 import { deleteConnectedEdgesDraft, deleteEdgeDraft } from "./edges";
@@ -29,6 +29,8 @@ export type BlocksActions = {
   detachBlockFromGroup: (indices: BlockIndices) => void;
   deleteBlock: (indices: BlockIndices) => void;
 };
+
+type DraftBlock = Draft<TypebotV6>["groups"][number]["blocks"][number];
 
 export type WebhookCallBacks = {
   onWebhookBlockCreated: (data: Partial<HttpRequest>) => void;
@@ -75,7 +77,11 @@ export const blocksAction = (setTypebot: SetTypebot): BlocksActions => ({
             typebot,
             edgeId: block.outgoingEdgeId,
           });
-        typebot.groups[groupIndex].blocks.splice(blockIndex + 1, 0, newBlock);
+        typebot.groups[groupIndex].blocks.splice(
+          blockIndex + 1,
+          0,
+          castDraft(newBlock) as DraftBlock,
+        );
         if (newEdges) {
           newEdges.forEach((edge) => {
             typebot.edges.push(edge);
@@ -127,12 +133,16 @@ export const createBlockDraft = (
 };
 
 const createNewBlock = (
-  typebot: Draft<Typebot>,
+  typebot: Draft<TypebotV6>,
   type: BlockV6["type"],
   { groupIndex, blockIndex }: BlockIndices,
 ) => {
   const newBlock = parseNewBlock(type);
-  typebot.groups[groupIndex].blocks.splice(blockIndex ?? 0, 0, newBlock);
+  typebot.groups[groupIndex].blocks.splice(
+    blockIndex ?? 0,
+    0,
+    castDraft(newBlock) as DraftBlock,
+  );
   return newBlock.id;
 };
 
@@ -161,7 +171,11 @@ const moveBlockToGroup = (
       edge.to.groupId = groupId;
     }
   });
-  typebot.groups[groupIndex].blocks.splice(blockIndex ?? 0, 0, newBlock);
+  typebot.groups[groupIndex].blocks.splice(
+    blockIndex ?? 0,
+    0,
+    castDraft(newBlock) as DraftBlock,
+  );
   return newBlock.id;
 };
 

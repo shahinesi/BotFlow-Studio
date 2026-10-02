@@ -2,6 +2,41 @@ import { createActionHandler, createFetcherHandler } from "@typebot.io/forge";
 import { getHostExecutionContext } from "@typebot.io/runtime-session-store/hostExecutionContext";
 import { z } from "zod";
 import { hostAction, hostActionsFetcher } from "./hostAction";
+import {
+  hostAccessChecksFetcher,
+  userAccessCheckAction,
+} from "./userAccessCheck";
+
+const accessOutcomeSchema = z.enum([
+  "AUTHORIZED",
+  "DENIED",
+  "ACCOUNT_NOT_FOUND",
+  "VERIFICATION_REQUIRED",
+  "ERROR",
+]);
+
+const hostBlockMetadataSchema = z.object({
+  type: z.literal("USER_ACCESS_CHECK"),
+  accessChecks: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(128),
+        title: z.string().min(1).max(120),
+        description: z.string().max(500),
+      }),
+    )
+    .max(30),
+  outcomes: z.array(accessOutcomeSchema).min(1).max(5),
+});
+
+const userAccessCheckCatalogSchema = z.object({
+  actions: z.array(
+    z.object({
+      key: z.string().min(1).max(128),
+      hostBlock: hostBlockMetadataSchema.optional(),
+    }),
+  ),
+});
 
 const hostCatalogSchema = z.object({
   actions: z.array(
@@ -26,6 +61,7 @@ const hostCatalogSchema = z.object({
           }),
         )
         .max(30),
+      hostBlock: hostBlockMetadataSchema.optional(),
     }),
   ),
 });
@@ -122,19 +158,21 @@ export const hostActionsFetcherHandler = createFetcherHandler(
         return { error: { description: "Host action catalog unavailable" } };
 
       return {
-        data: parsed.data.actions.map((action) => ({
-          value: action.key,
-          label: `${action.title} (${action.key}) — ${action.description}${
-            action.inputs.length
-              ? ` · Inputs: ${action.inputs
-                  .map(
-                    ({ key, type, required }) =>
-                      `${key}: ${type}${required ? " (required)" : ""}`,
-                  )
-                  .join(", ")}`
-              : " · No inputs"
-          } · Outputs: ${action.outputs.map(({ key, type }) => `${key}: ${type}`).join(", ")}`,
-        })),
+        data: parsed.data.actions
+          .filter((action) => !action.hostBlock)
+          .map((action) => ({
+            value: action.key,
+            label: `${action.title} (${action.key}) — ${action.description}${
+              action.inputs.length
+                ? ` · Inputs: ${action.inputs
+                    .map(
+                      ({ key, type, required }) =>
+                        `${key}: ${type}${required ? " (required)" : ""}`,
+                    )
+                    .join(", ")}`
+                : " · No inputs"
+            } · Outputs: ${action.outputs.map(({ key, type }) => `${key}: ${type}`).join(", ")}`,
+          })),
       };
     } catch {
       return { error: { description: "Host action catalog unavailable" } };
@@ -142,4 +180,100 @@ export const hostActionsFetcherHandler = createFetcherHandler(
   },
 );
 
-export default [hostActionsFetcherHandler, hostActionHandler];
+export const userAccessCheckHandler = createActionHandler(
+  userAccessCheckAction,
+  {
+    server: async ({ options, variables, logs }) => {
+      try {
+        const trusted = getHostExecutionContext();
+        const baseUrl = process.env.HOST_API_BASE_URL;
+        const serviceKey = process.env.HOST_SERVICE_AUTH_KEY;
+        const accessKey = options.accessKey?.trim();
+        if (!baseUrl || !serviceKey || !accessKey)
+          throw new Error("Host access check unavailable");
+
+        const response = await fetch(
+          new URL("/internal/host/actions/identity.userAccessCheck", baseUrl),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-host-service-key": serviceKey,
+              "x-host-execution-context": trusted.signedContext,
+            },
+            body: JSON.stringify({ inputs: { accessKey } }),
+            redirect: "error",
+            signal: AbortSignal.timeout(5000),
+          },
+        );
+        if (!response.ok) throw new Error("Host access check denied");
+        const result: unknown = await response.json();
+        if (
+          !result ||
+          typeof result !== "object" ||
+          !("kind" in result) ||
+          result.kind !== "TEXT" ||
+          !("text" in result) ||
+          !accessOutcomeSchema.safeParse(result.text).success
+        )
+          throw new Error("Unexpected Host access result");
+        if (options.outputVariableId)
+          variables.set([{ id: options.outputVariableId, value: result.text }]);
+      } catch {
+        logs.add("Host access check unavailable");
+        throw new Error("Host access check unavailable");
+      }
+    },
+  },
+);
+
+export const hostAccessChecksFetcherHandler = createFetcherHandler(
+  userAccessCheckAction,
+  hostAccessChecksFetcher.id,
+  async () => {
+    const baseUrl = process.env.HOST_API_BASE_URL;
+    const serviceKey = process.env.HOST_SERVICE_AUTH_KEY;
+    if (!baseUrl || !serviceKey)
+      return { error: { description: "Host access options unavailable" } };
+
+    try {
+      const response = await fetch(
+        new URL("/internal/host/actions/catalog", baseUrl),
+        {
+          headers: { "x-host-service-key": serviceKey },
+          redirect: "error",
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      if (!response.ok)
+        return { error: { description: "Host access options unavailable" } };
+      const parsed = userAccessCheckCatalogSchema.safeParse(
+        await response.json(),
+      );
+      if (!parsed.success)
+        return { error: { description: "Host access options unavailable" } };
+      const checks = parsed.data.actions.flatMap((action) =>
+        action.hostBlock?.type === "USER_ACCESS_CHECK"
+          ? action.hostBlock.accessChecks
+          : [],
+      );
+      if (new Set(checks.map(({ key }) => key)).size !== checks.length)
+        return { error: { description: "Host access options unavailable" } };
+      return {
+        data: checks.map(({ key, title, description }) => ({
+          value: key,
+          label: description ? `${title} — ${description}` : title,
+        })),
+      };
+    } catch {
+      return { error: { description: "Host access options unavailable" } };
+    }
+  },
+);
+
+export default [
+  hostActionsFetcherHandler,
+  hostActionHandler,
+  hostAccessChecksFetcherHandler,
+  userAccessCheckHandler,
+];

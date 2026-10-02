@@ -17,8 +17,14 @@ import { gmailBlock } from "@typebot.io/gmail-block";
 import { gmailBlockSchema } from "@typebot.io/gmail-block/schemas";
 import { groqBlock } from "@typebot.io/groq-block";
 import { groqBlockSchema } from "@typebot.io/groq-block/schemas";
-import { hostActionBlock } from "@typebot.io/host-action-block";
-import { hostActionBlockSchema } from "@typebot.io/host-action-block/schemas";
+import {
+  hostActionBlock,
+  userAccessCheckBlock,
+} from "@typebot.io/host-action-block";
+import {
+  hostActionBlockSchema,
+  userAccessCheckBlockSchema,
+} from "@typebot.io/host-action-block/schemas";
 import { mistralBlock } from "@typebot.io/mistral-block";
 import { mistralBlockSchema } from "@typebot.io/mistral-block/schemas";
 import { nocodbBlock } from "@typebot.io/nocodb-block";
@@ -62,6 +68,7 @@ export const forgedBlockSchemas = {
   [blinkBlock.id]: blinkBlockSchema,
   [gmailBlock.id]: gmailBlockSchema,
   [hostActionBlock.id]: hostActionBlockSchema,
+  [userAccessCheckBlock.id]: userAccessCheckBlockSchema,
 } as const;
 
 export const forgedBlockSchema = z.discriminatedUnion("type", [
@@ -85,5 +92,6 @@ export const forgedBlockSchema = z.discriminatedUnion("type", [
   blinkBlockSchema,
   gmailBlockSchema,
   hostActionBlockSchema,
+  userAccessCheckBlockSchema,
 ]);
 export type ForgedBlock = z.infer<typeof forgedBlockSchema>;

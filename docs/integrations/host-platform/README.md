@@ -157,3 +157,11 @@ The Typebot Builder sends the message with that exact target origin; it does not
 ## Adding a Host Action
 
 Implement and register the Action in the Host, add its safe `title`, `description`, primitive input definitions and controlled output hints to the Action metadata, then expose the registered metadata through the authenticated catalog endpoint. The Builder selector discovers it automatically. Runtime still resolves the same stable `actionKey` through the Host Gateway; changing/removing a key requires deliberate Host-side compatibility handling. No BotFlow block, Forge core or engine change is needed for a new Host capability.
+
+## First-class Host Block: User Access Check
+
+Hosts may opt a registered Action into the generic `USER_ACCESS_CHECK` Forge block by attaching safe `hostBlock` metadata to that Action's catalog entry. The Builder renders the existing «بررسی دسترسی کاربر» palette block and fetches only the Host-provided choice labels. The special action key and all authorization implementation details stay server-side; entries marked for the special block are omitted from the generic Host Action selector. No permission list, identity claim, secret or Host-specific role model is sent to the browser.
+
+The block stores a Host choice and a result variable. Its runtime uses the normal signed execution context and Host Action Gateway; the Host re-resolves identity and permission on every invocation. Flow authors branch using Typebot's built-in Condition block on the normalized result (`AUTHORIZED`, `DENIED`, `ACCOUNT_NOT_FOUND`, `VERIFICATION_REQUIRED`, or `ERROR`). BotFlow does not authorize locally. A future Host Block can add a new generic Forge block and a safe catalog descriptor in the existing Host integration package without changing Forge core or the Flow engine; no category framework is implied.
+
+Phone admission remains Core-owned. An unverified BotUser cannot reach the Action Gateway: Shared Core requests native self-contact and stops before Flow input. The access block does not request or store phone verification itself. Its `AUTHORIZED` result is only the configured Web permission check; subsequent business Actions must independently enforce organizational data scope through their existing services.

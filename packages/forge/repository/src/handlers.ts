@@ -17,7 +17,10 @@ import { gmailBlock } from "@typebot.io/gmail-block";
 import gmailBlockHandlers from "@typebot.io/gmail-block/handlers";
 import { groqBlock } from "@typebot.io/groq-block";
 import groqBlockHandlers from "@typebot.io/groq-block/handlers";
-import { hostActionBlock } from "@typebot.io/host-action-block";
+import {
+  hostActionBlock,
+  userAccessCheckBlock,
+} from "@typebot.io/host-action-block";
 import hostActionBlockHandlers from "@typebot.io/host-action-block/handlers";
 import { mistralBlock } from "@typebot.io/mistral-block";
 import mistralBlockHandlers from "@typebot.io/mistral-block/handlers";
@@ -61,4 +64,5 @@ export const forgedBlockHandlers = {
   [blinkBlock.id]: blinkBlockHandlers,
   [gmailBlock.id]: gmailBlockHandlers,
   [hostActionBlock.id]: hostActionBlockHandlers,
+  [userAccessCheckBlock.id]: hostActionBlockHandlers,
 };

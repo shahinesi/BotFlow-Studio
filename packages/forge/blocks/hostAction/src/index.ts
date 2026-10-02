@@ -1,6 +1,7 @@
 import { createBlock } from "@typebot.io/forge";
 import { hostAction } from "./hostAction";
 import { HostActionLogo } from "./logo";
+import { userAccessCheckBlock } from "./userAccessCheck";
 
 export const hostActionBlock = createBlock({
   id: "host-action",
@@ -9,3 +10,5 @@ export const hostActionBlock = createBlock({
   LightLogo: HostActionLogo,
   actions: [hostAction],
 });
+
+export { userAccessCheckBlock };

@@ -1,7 +1,12 @@
 import { afterEach, expect, it } from "bun:test";
 import { runWithHostExecutionContext } from "@typebot.io/runtime-session-store/hostExecutionContext";
-import { hostActionHandler, hostActionsFetcherHandler } from "./handlers";
-import { hostActionBlockSchema } from "./schemas";
+import {
+  hostAccessChecksFetcherHandler,
+  hostActionHandler,
+  hostActionsFetcherHandler,
+  userAccessCheckHandler,
+} from "./handlers";
+import { hostActionBlockSchema, userAccessCheckBlockSchema } from "./schemas";
 
 const originalFetch = globalThis.fetch;
 const originalUrl = process.env.HOST_API_BASE_URL;
@@ -57,6 +62,21 @@ it("registers a generic Host Action accepting arbitrary host action keys", () =>
   expect(parsed.success).toBe(true);
   if (parsed.success)
     expect(parsed.data.options.actionKey).toBe("invoice.lookup");
+});
+
+it("parses a persisted User Access Check block without exposing provider details", () => {
+  const parsed = userAccessCheckBlockSchema.safeParse({
+    id: "access-check-a",
+    type: "host-user-access-check",
+    options: {
+      action: "بررسی دسترسی کاربر",
+      accessKey: "cashier-report-read",
+      outputVariableId: "access-result",
+    },
+  });
+  expect(parsed.success).toBe(true);
+  if (parsed.success)
+    expect(parsed.data.options.accessKey).toBe("cashier-report-read");
 });
 
 it("maps primitive input types and Flow variables to JSON values", async () => {
@@ -142,6 +162,130 @@ it("fetches a generic Host catalog and exposes only selector metadata", async ()
   expect(JSON.stringify(result)).not.toContain(
     "catalog-secret-must-not-reach-builder",
   );
+});
+
+it("keeps Host access choices out of the generic action picker and exposes safe labels", async () => {
+  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  globalThis.fetch = Object.assign(
+    async () =>
+      Response.json({
+        actions: [
+          {
+            key: "demo.echo",
+            title: "Echo",
+            description: "Returns a value.",
+            inputs: [],
+            outputs: [],
+          },
+          {
+            key: "identity.userAccessCheck",
+            title: "بررسی دسترسی کاربر",
+            description: "Host-owned access capability.",
+            inputs: [{ key: "accessKey", type: "string", required: true }],
+            outputs: [{ key: "outcome", type: "string" }],
+            hostBlock: {
+              type: "USER_ACCESS_CHECK",
+              accessChecks: [
+                {
+                  key: "feature-read",
+                  title: "دسترسی ویژه",
+                  description: "بررسی مجوز.",
+                },
+              ],
+              outcomes: ["AUTHORIZED", "DENIED", "ACCOUNT_NOT_FOUND"],
+            },
+            internalRoute: "/private/report",
+          },
+        ],
+      }),
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const generic = await hostActionsFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  const choices = await hostAccessChecksFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  expect(generic.data).toHaveLength(1);
+  expect(generic.data).toMatchObject([{ value: "demo.echo" }]);
+  expect(choices).toEqual({
+    data: [
+      {
+        value: "feature-read",
+        label: "دسترسی ویژه — بررسی مجوز.",
+      },
+    ],
+  });
+  expect(JSON.stringify(choices)).not.toMatch(
+    /identity\.userAccessCheck|host-service-secret|internalRoute|private\/report/,
+  );
+});
+
+it("executes only the configured access choice and stores a normalized result", async () => {
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  const values: string[] = [];
+  globalThis.fetch = (async (url, init) => {
+    expect(String(url)).toBe(
+      "http://localhost:1234/internal/host/actions/identity.userAccessCheck",
+    );
+    expect(init?.headers).toMatchObject({
+      "x-host-service-key": "host-service-secret",
+      "x-host-execution-context": "signed-host-context",
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      inputs: { accessKey: "feature-read" },
+    });
+    return Response.json({ kind: "TEXT", text: "AUTHORIZED" });
+  }) as typeof fetch;
+  await runWithHostExecutionContext(trusted("signed-host-context"), () =>
+    userAccessCheckHandler.server!({
+      credentials: undefined,
+      options: {
+        accessKey: "feature-read",
+        outputVariableId: "access-result",
+      },
+      variables: {
+        set: (items: { value: unknown }[]) =>
+          values.push(String(items[0].value)),
+      },
+      logs: { add: () => {} },
+    } as never),
+  );
+  expect(values).toEqual(["AUTHORIZED"]);
+});
+
+it("rejects malformed access outcomes and does not store them", async () => {
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  const values: string[] = [];
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ kind: "TEXT", text: "FORGED_AUTHORIZED" }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const logs: string[] = [];
+  await expect(
+    runWithHostExecutionContext(trusted("signed-context"), () =>
+      userAccessCheckHandler.server!({
+        credentials: undefined,
+        options: {
+          accessKey: "feature-read",
+          outputVariableId: "access-result",
+        },
+        variables: {
+          set: (items: { value: unknown }[]) =>
+            values.push(String(items[0].value)),
+        },
+        logs: { add: (entry: unknown) => logs.push(String(entry)) },
+      } as never),
+    ),
+  ).rejects.toThrow("Host access check unavailable");
+  expect(values).toEqual([]);
+  expect(logs).toEqual(["Host access check unavailable"]);
 });
 
 it("returns a controlled catalog error for bad service auth or an unavailable Host", async () => {
