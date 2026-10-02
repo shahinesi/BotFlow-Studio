@@ -1,5 +1,7 @@
 # Host Platform Integration
 
+Status: generic Host integration is implemented and locally accepted with ShahrFarsh as one Host. Server deployment is not asserted by this guide. BotFlow owns its Flow/session database; a Host owns identity, business Actions and source-controlled Template definitions. See the Host application's own architecture and runbook for product-specific policy.
+
 BotFlow Studio is a reusable Flow Engine. A Host Application owns identity, business data, permissions, and action implementations; BotFlow owns visual authoring, published flow data, and flow sessions.
 
 ```mermaid
@@ -42,7 +44,7 @@ BotFlow validates the signature, audience, issuer presence, flow ID, execution I
 
 `HOST_BRIDGE_SERVICE_KEY` authenticates Host → BotFlow. `HOST_EXECUTION_CONTEXT_SIGNING_KEY` verifies the Host assertion. `HOST_SESSION_BINDING_KEY` signs session bindings. Separately, `HOST_API_BASE_URL` and `HOST_SERVICE_AUTH_KEY` configure BotFlow → Host Action Gateway. These secrets are deployment configuration; they never belong in a Flow or Builder credential.
 
-`HOST_SESSION_BINDING_KEY` is required by the **Viewer** Host Bridge and must be a unique, stable secret of at least 32 bytes. The Viewer checks that requirement when validating a Host request; Builder does not read or require this variable. Generate it once per BotFlow installation (for example, `openssl rand -base64 32`), store it in the ignored `.env` used by `docker-compose.yml`, or in `.env.docker` used by `docker-compose.build.yml`, and preserve it across restarts. Do not rotate it while sessions are active: existing opaque session bindings will no longer verify. The Compose files share an env file between Builder and Viewer, so Builder receives the variable there but does not consume it. No separate deployment script exists in this repository.
+`HOST_SESSION_BINDING_KEY` is required by the **Viewer** Host Bridge and must be a unique, stable secret of at least 32 bytes. The Viewer checks that requirement when validating a Host request; Builder does not read or require this variable. Generate it once per BotFlow installation, store it in the ignored local/deployment env used for the Viewer, and preserve it across restarts. Do not rotate it while sessions are active: existing opaque session bindings will no longer verify. The checked-in Compose examples may share an env file between Builder and Viewer, so Builder may receive the variable there but does not consume it. There is no separate deployment script in this repository. Never put the real value in an example or docs.
 
 If rotation is unavoidable, old persisted Host session bindings are invalid. Starting bot-runtime again does not re-sign them; resume requires a new Flow session after the Host has safely cleared the stale correlation mapping. Never bypass the Viewer signature check to preserve an old session.
 
@@ -138,7 +140,7 @@ The Host bridge, Flow verification, request-scope isolation, generic block invoc
 
 ## Builder identity through Custom OAuth
 
-Builder authentication uses the existing Typebot Custom OAuth OIDC provider, independently of Host Bridge service authentication. Configure `CUSTOM_OAUTH_ISSUER`, confidential `CUSTOM_OAUTH_CLIENT_ID`/`CUSTOM_OAUTH_CLIENT_SECRET`, scopes `openid profile email`, and profile paths matching the issuer (`sub`, `name`, `email` for standard claims). The callback is `${NEXTAUTH_URL}/api/auth/callback/custom-oauth`. Client secrets remain server-only.
+Builder authentication uses the existing Typebot Custom OAuth OIDC provider, independently of Host Bridge service authentication. Actual Auth.js configuration names are `CUSTOM_OAUTH_ISSUER` (or `CUSTOM_OAUTH_WELL_KNOWN_URL`), `CUSTOM_OAUTH_CLIENT_ID`, `CUSTOM_OAUTH_CLIENT_SECRET`, `CUSTOM_OAUTH_SCOPE`, and `CUSTOM_OAUTH_USER_ID_PATH`, `CUSTOM_OAUTH_USER_EMAIL_PATH`, `CUSTOM_OAUTH_USER_NAME_PATH`, `CUSTOM_OAUTH_USER_IMAGE_PATH`. Defaults for scope and profile paths are defined in `packages/env/src/index.ts`; confirm claim paths against the configured issuer. The callback is `${NEXTAUTH_URL}/api/auth/callback/custom-oauth`. Client secrets remain server-only.
 
 The provider validates the OIDC ID Token, state and S256 PKCE and reads profile claims from the standard UserInfo endpoint (`idToken: false` in Auth.js). An issuer need not duplicate email/profile claims inside an authorization-code ID Token. A generic callback regression covers a signed subject-only ID Token, UserInfo mapping, PKCE and invalid state.
 
@@ -149,6 +151,8 @@ For management handoff to private editor routes, use official `/signin` with a t
 ## Embedded Studio publish notification
 
 When the Builder is embedded, a successful publish emits `hostStudio.flowPublished` to the exact origin in `document.referrer`. The versioned message contains only the editable Typebot ID and its public Flow ID. Standalone publishing sends no Host message. The Host must validate `event.origin` and `event.source`, then verify the ID relationship and published status through its configured Host API before binding anything. The event is a notification only; it does not grant access or authorize an action. No wildcard target origin or Host-specific event is used.
+
+The Typebot Builder sends the message with that exact target origin; it does not use `*`. The Host's supported parser requires version `1`, exact event shape, nonempty IDs bounded to 128 characters, exact expected origin and the iframe's exact `contentWindow`. The ShahrFarsh server then performs its own BotFlow metadata verification; browser data alone never authorizes binding. Studio frame policy is configured by exact `HOST_STUDIO_EMBED_ALLOWED_ORIGINS`; invalid paths/wildcards are rejected by the generic env schema.
 
 ## Adding a Host Action
 
