@@ -57,6 +57,21 @@ const boolean = z
   .enum(["true", "false"])
   .transform((value) => value === "true");
 
+const exactHttpOrigin = (value: string) => {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === value &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+};
+
 const baseEnv = {
   server: {
     NODE_ENV: z
@@ -72,6 +87,16 @@ const baseEnv = {
       guessNextAuthUrlForVercelPreview,
       z.string().url(),
     ),
+    HOST_STUDIO_EMBED_ALLOWED_ORIGINS: z
+      .string()
+      .optional()
+      .transform((value) =>
+        value?.trim() ? value.split(",").map((origin) => origin.trim()) : [],
+      )
+      .refine((origins) => origins.every(exactHttpOrigin), {
+        message:
+          "HOST_STUDIO_EMBED_ALLOWED_ORIGINS must contain exact HTTP(S) origins without paths or wildcards",
+      }),
     DISABLE_SIGNUP: boolean.optional().default(false),
     ADMIN_EMAIL: z
       .string()

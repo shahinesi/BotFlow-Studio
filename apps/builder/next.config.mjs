@@ -47,6 +47,31 @@ const noStoreHeaders = [
   },
 ];
 
+const contentSecurityPolicy = (isDev, frameAncestors) =>
+  [
+    "default-src 'self'",
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:${isDev ? " http://localhost:* " : ""}`,
+    "style-src 'self' 'unsafe-inline' https:",
+    `connect-src 'self' https: wss:${
+      isDev ? " http://localhost:* ws://localhost:*" : ""
+    }`,
+    "frame-src 'self' https: http:",
+    `img-src 'self' data: blob: https:${isDev ? " http://localhost:*" : ""}`,
+    "font-src 'self' https: data:",
+    `media-src 'self' blob: https:${isDev ? " http://localhost:* " : ""}`,
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    `frame-ancestors ${frameAncestors}`,
+    "form-action 'self'",
+    "base-uri 'self'",
+  ].join("; ");
+
+const studioEmbedOrigins = () =>
+  (process.env.HOST_STUDIO_EMBED_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
@@ -65,9 +90,11 @@ const nextConfig = {
   outputFileTracingRoot: join(__dirname, "../../"),
   headers: async () => {
     const isDev = process.env.NODE_ENV !== "production";
+    const embedOrigins = studioEmbedOrigins();
+    const studioFrameAncestors = ["'self'", ...embedOrigins].join(" ");
     return [
       {
-        source: "/(.*)?",
+        source: "/((?!typebots).*)",
         headers: [
           {
             key: "X-Frame-Options",
@@ -79,23 +106,20 @@ const nextConfig = {
           },
           {
             key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:${isDev ? " http://localhost:* " : ""}`,
-              "style-src 'self' 'unsafe-inline' https:",
-              `connect-src 'self' https: wss:${
-                isDev ? " http://localhost:* ws://localhost:*" : ""
-              }`,
-              "frame-src 'self' https: http:",
-              `img-src 'self' data: blob: https:${isDev ? " http://localhost:*" : ""}`,
-              "font-src 'self' https: data:",
-              `media-src 'self' blob: https:${isDev ? " http://localhost:* " : ""}`,
-              "worker-src 'self' blob:",
-              "object-src 'none'",
-              "frame-ancestors 'self'",
-              "form-action 'self'",
-              "base-uri 'self'",
-            ].join("; "),
+            value: contentSecurityPolicy(isDev, "'self'"),
+          },
+        ],
+      },
+      {
+        source: "/typebots/:path*",
+        headers: [
+          ...(embedOrigins.length
+            ? []
+            : [{ key: "X-Frame-Options", value: "SAMEORIGIN" }]),
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          {
+            key: "Content-Security-Policy",
+            value: contentSecurityPolicy(isDev, studioFrameAncestors),
           },
         ],
       },
