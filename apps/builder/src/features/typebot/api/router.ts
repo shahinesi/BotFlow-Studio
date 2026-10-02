@@ -14,7 +14,9 @@ import {
 } from "@typebot.io/typebot/schemas/typebot";
 import { z } from "zod";
 import {
+  getHostActionCatalog,
   getHostTemplateCatalog,
+  hostActionCatalogSchema,
   hostTemplateCatalogSchema,
 } from "@/features/templates/api/hostTemplateApi";
 import {
@@ -222,6 +224,18 @@ const listHostTemplates = authenticatedProcedure
   .output(hostTemplateCatalogSchema)
   .handler(getHostTemplateCatalog);
 
+const listHostActions = authenticatedProcedure
+  .route({
+    method: "GET",
+    path: "/v1/host/actions",
+    operationId: "host-listActions",
+    summary: "List Host action presentation metadata",
+    tags: ["Host"],
+  })
+  .input(z.object({}))
+  .output(hostActionCatalogSchema)
+  .handler(getHostActionCatalog);
+
 const getTypebotBlocks = authenticatedProcedure
   .input(getTypebotBlocksInputSchema)
   .handler(handleGetTypebotBlocks);
@@ -241,6 +255,7 @@ export type TypebotRouter = {
   getPublishedTypebot: typeof getPublishedTypebot;
   importTypebot: typeof importTypebot;
   listHostTemplates: typeof listHostTemplates;
+  listHostActions: typeof listHostActions;
   getTypebotBlocks: typeof getTypebotBlocks;
   isPublicIdAvailable: typeof isPublicIdAvailable;
 };
@@ -256,6 +271,7 @@ export const typebotRouter: TypebotRouter = {
   getPublishedTypebot,
   importTypebot,
   listHostTemplates,
+  listHostActions,
   getTypebotBlocks,
   isPublicIdAvailable,
 };

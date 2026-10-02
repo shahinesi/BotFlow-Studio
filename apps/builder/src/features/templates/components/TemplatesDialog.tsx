@@ -159,33 +159,45 @@ export const TemplatesDialog = ({
                 ))}
             </div>
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium pl-1" color="gray.500">
-                Host templates
-              </p>
-              {hostTemplateCatalog?.templates.map((template) => (
-                <Button
-                  size="sm"
-                  key={template.key}
-                  onClick={() =>
-                    setSelectedTemplate({ kind: "host", template })
-                  }
-                  className="w-full"
-                  variant={
-                    selectedTemplate.kind === "host" &&
-                    selectedTemplate.template.key === template.key
-                      ? "outline"
-                      : "ghost"
-                  }
-                >
-                  <div className="flex items-center gap-2 overflow-hidden text-sm w-full">
-                    <p>🤖</p>
-                    <p className="truncate">{template.name}</p>
-                    <Badge colorScheme="blue" className="shrink-0">
-                      Host
-                    </Badge>
+              {getHostTemplateGroups(hostTemplateCatalog?.templates ?? []).map(
+                (group) => (
+                  <div key={group.key} className="flex flex-col gap-2">
+                    <p
+                      className="flex items-center gap-2 text-xs font-medium pl-1"
+                      color="gray.500"
+                    >
+                      <span aria-hidden="true">
+                        {getCollectionIcon(group.icon)}
+                      </span>
+                      {group.title}
+                    </p>
+                    {group.templates.map((template) => (
+                      <Button
+                        size="sm"
+                        key={template.key}
+                        onClick={() =>
+                          setSelectedTemplate({ kind: "host", template })
+                        }
+                        className="w-full"
+                        variant={
+                          selectedTemplate.kind === "host" &&
+                          selectedTemplate.template.key === template.key
+                            ? "outline"
+                            : "ghost"
+                        }
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden text-sm w-full">
+                          <p>🤖</p>
+                          <p className="truncate">{template.name}</p>
+                          <Badge colorScheme="blue" className="shrink-0">
+                            Host
+                          </Badge>
+                        </div>
+                      </Button>
+                    ))}
                   </div>
-                </Button>
-              ))}
+                ),
+              )}
               {isHostCatalogLoading && (
                 <p className="px-1 text-xs text-gray-10">
                   Loading Host templates…
@@ -258,4 +270,44 @@ export const TemplatesDialog = ({
       </Dialog.Popup>
     </Dialog.Root>
   );
+};
+
+const getHostTemplateGroups = (templates: HostTemplateMetadata[]) => {
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      title: string;
+      icon?: string;
+      order?: number;
+      templates: HostTemplateMetadata[];
+    }
+  >();
+  for (const template of templates) {
+    const collection = template.collection;
+    const key = collection?.key ?? "host-templates";
+    const group = groups.get(key) ?? {
+      key,
+      title: collection?.title ?? "Host templates",
+      icon: collection?.icon,
+      order: collection?.order,
+      templates: [],
+    };
+    group.templates.push(template);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+};
+
+const getCollectionIcon = (icon?: string) => {
+  switch (icon) {
+    case "building":
+      return "🏢";
+    case "shield":
+      return "🛡️";
+    case "grid":
+      return "▦";
+    default:
+      return "🤖";
+  }
 };

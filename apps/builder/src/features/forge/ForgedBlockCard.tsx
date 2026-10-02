@@ -7,6 +7,7 @@ import { useForgedBlock } from "./hooks/useForgedBlock";
 
 export const ForgedBlockCard = (props: {
   type: ForgedBlock["type"];
+  label?: string;
   onPointerDown: (e: React.PointerEvent, type: BlockV6["type"]) => void;
 }) => {
   const { blockDef } = useForgedBlock({ nodeType: props.type });
@@ -17,7 +18,11 @@ export const ForgedBlockCard = (props: {
       tooltip={blockDef?.fullName ? blockDef.fullName : undefined}
     >
       <BlockIcon type={props.type} />
-      <BlockLabel type={props.type} />
+      {props.label ? (
+        <p className="text-sm">{props.label}</p>
+      ) : (
+        <BlockLabel type={props.type} />
+      )}
     </BlockCardLayout>
   );
 };

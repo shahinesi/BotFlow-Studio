@@ -4,6 +4,7 @@ import { UserAccessCheckLogo } from "./userAccessCheckLogo";
 export const hostAccessChecksFetcher = { id: "hostAccessChecks" } as const;
 
 export const userAccessCheckAction = createAction({
+  // This value is serialized as the action discriminator in saved Typebots.
   name: "بررسی دسترسی کاربر",
   fetchers: [hostAccessChecksFetcher],
   options: option.object({
@@ -30,8 +31,8 @@ export const userAccessCheckAction = createAction({
 
 export const userAccessCheckBlock = createBlock({
   id: "host-user-access-check",
-  name: "بررسی دسترسی کاربر",
-  tags: ["host", "دسترسی"],
+  name: "Host capability",
+  tags: ["host", "access"],
   LightLogo: UserAccessCheckLogo,
   actions: [userAccessCheckAction],
 });

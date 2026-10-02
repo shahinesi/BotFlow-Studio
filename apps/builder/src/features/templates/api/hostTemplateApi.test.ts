@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "bun:test";
 import {
   assertHostTemplateActionsAvailable,
+  getHostActionCatalog,
   getHostTemplate,
   getHostTemplateCatalog,
 } from "./hostTemplateApi";
@@ -39,6 +40,12 @@ it("fetches only safe template metadata from a generic Host", async () => {
             key: "demo-template",
             name: "Demo template",
             description: "A generic Project B starting point.",
+            collection: {
+              key: "project-b",
+              title: "Project B",
+              icon: "building",
+              order: 20,
+            },
             internalSecret: "not-for-builder",
           },
         ],
@@ -52,10 +59,66 @@ it("fetches only safe template metadata from a generic Host", async () => {
       key: "demo-template",
       name: "Demo template",
       description: "A generic Project B starting point.",
+      collection: {
+        key: "project-b",
+        title: "Project B",
+        icon: "building",
+        order: 20,
+      },
     },
   ]);
   expect(JSON.stringify(result)).not.toContain("host-service-secret");
   expect(JSON.stringify(result)).not.toContain("not-for-builder");
+});
+
+it("loads only safe Host palette metadata from the existing Action Catalog", async () => {
+  setupHost();
+  setFetch(
+    Object.assign(
+      async () =>
+        Response.json({
+          actions: [
+            {
+              key: "identity.accessCheck",
+              title: "Check user access",
+              description: "Checks access for the trusted user.",
+              inputs: [{ key: "accessKey", type: "string" }],
+              outputs: [{ key: "outcome", type: "string" }],
+              hostBlock: {
+                type: "USER_ACCESS_CHECK",
+                blockId: "host-user-access-check",
+                palette: {
+                  placement: "host-section",
+                  section: {
+                    key: "project-b",
+                    title: "Project B",
+                    icon: "building",
+                    order: 20,
+                  },
+                },
+                accessChecks: [
+                  {
+                    key: "records.read",
+                    title: "Read records",
+                    description: "View permitted records.",
+                  },
+                ],
+                outcomes: ["AUTHORIZED", "DENIED"],
+                authorizationState: "private",
+              },
+              serviceSecret: "never-returned",
+            },
+          ],
+        }),
+      originalFetch,
+    ),
+  );
+  const result = await getHostActionCatalog();
+  expect(result.actions[0]?.hostBlock?.palette?.section?.title).toBe(
+    "Project B",
+  );
+  expect(JSON.stringify(result)).not.toContain("never-returned");
+  expect(JSON.stringify(result)).not.toContain("authorizationState");
 });
 
 it("loads and validates a selected generic Host template server-side", async () => {

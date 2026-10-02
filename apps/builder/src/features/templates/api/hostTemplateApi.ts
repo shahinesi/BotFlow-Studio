@@ -5,6 +5,18 @@ export const hostTemplateMetadataSchema = z.object({
   key: z.string().min(1).max(128),
   name: z.string().min(1).max(120),
   description: z.string().max(1000),
+  collection: z
+    .object({
+      key: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9-]+$/),
+      title: z.string().min(1).max(120),
+      icon: z.enum(["building", "grid", "shield"]).optional(),
+      order: z.number().int().min(0).max(10000).optional(),
+    })
+    .optional(),
 });
 
 export const hostTemplateCatalogSchema = z.object({
@@ -17,7 +29,7 @@ const hostTemplateSchema = z.object({
   }),
 });
 
-const hostActionCatalogSchema = z.object({
+export const hostActionCatalogSchema = z.object({
   actions: z.array(
     z.object({
       key: z.string().min(1).max(128),
@@ -25,6 +37,45 @@ const hostActionCatalogSchema = z.object({
       description: z.string().max(1000),
       inputs: z.array(z.unknown()),
       outputs: z.array(z.unknown()),
+      hostBlock: z
+        .object({
+          type: z.string().min(1).max(64),
+          blockId: z
+            .string()
+            .min(1)
+            .max(128)
+            .regex(/^[a-z0-9-]+$/)
+            .optional(),
+          palette: z
+            .object({
+              placement: z.enum(["integrations", "host-section"]),
+              section: z
+                .object({
+                  key: z
+                    .string()
+                    .min(1)
+                    .max(64)
+                    .regex(/^[a-z0-9-]+$/),
+                  title: z.string().min(1).max(120),
+                  icon: z.enum(["building", "grid", "shield"]).optional(),
+                  order: z.number().int().min(0).max(10000).optional(),
+                })
+                .optional(),
+            })
+            .optional(),
+          accessChecks: z
+            .array(
+              z.object({
+                key: z.string().min(1).max(128),
+                title: z.string().min(1).max(120),
+                description: z.string().max(500),
+              }),
+            )
+            .max(30)
+            .optional(),
+          outcomes: z.array(z.string().min(1).max(64)).max(10).optional(),
+        })
+        .optional(),
     }),
   ),
 });
@@ -33,6 +84,9 @@ export type HostTemplateMetadata = z.infer<typeof hostTemplateMetadataSchema>;
 
 export const getHostTemplateCatalog = () =>
   hostRequest("/internal/host/templates", hostTemplateCatalogSchema);
+
+export const getHostActionCatalog = () =>
+  hostRequest("/internal/host/actions/catalog", hostActionCatalogSchema);
 
 export const getHostTemplate = async (key: string) => {
   const result = await hostRequest(
@@ -47,10 +101,7 @@ export const assertHostTemplateActionsAvailable = async (
   actionKeys: string[],
 ) => {
   if (!actionKeys.length) return;
-  const { actions } = await hostRequest(
-    "/internal/host/actions/catalog",
-    hostActionCatalogSchema,
-  );
+  const { actions } = await getHostActionCatalog();
   const availableActions = new Set(actions.map(({ key }) => key));
   if (actionKeys.some((key) => !availableActions.has(key)))
     throw hostUnavailable();
