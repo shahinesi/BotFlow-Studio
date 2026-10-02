@@ -42,7 +42,15 @@ BotFlow validates the signature, audience, issuer presence, flow ID, execution I
 
 `HOST_BRIDGE_SERVICE_KEY` authenticates Host → BotFlow. `HOST_EXECUTION_CONTEXT_SIGNING_KEY` verifies the Host assertion. `HOST_SESSION_BINDING_KEY` signs session bindings. Separately, `HOST_API_BASE_URL` and `HOST_SERVICE_AUTH_KEY` configure BotFlow → Host Action Gateway. These secrets are deployment configuration; they never belong in a Flow or Builder credential.
 
+`HOST_SESSION_BINDING_KEY` is required by the **Viewer** Host Bridge and must be a unique, stable secret of at least 32 bytes. The Viewer checks that requirement when validating a Host request; Builder does not read or require this variable. Generate it once per BotFlow installation (for example, `openssl rand -base64 32`), store it in the ignored `.env` used by `docker-compose.yml`, or in `.env.docker` used by `docker-compose.build.yml`, and preserve it across restarts. Do not rotate it while sessions are active: existing opaque session bindings will no longer verify. The Compose files share an env file between Builder and Viewer, so Builder receives the variable there but does not consume it. No separate deployment script exists in this repository.
+
+If rotation is unavoidable, old persisted Host session bindings are invalid. Starting bot-runtime again does not re-sign them; resume requires a new Flow session after the Host has safely cleared the stale correlation mapping. Never bypass the Viewer signature check to preserve an old session.
+
+For the source-build Compose setup, copy `.env.docker.example` to `.env.docker` and fill in deployment-specific values before starting the services.
+
 The `Host Action` Forge block takes an `actionKey`, key/value inputs, and an output variable. It posts to the configured Host's `/internal/host/actions/:actionKey` endpoint, passing the signed assertion and distinct Host service credential. It accepts only a controlled `{ "kind": "TEXT", "text": "..." }` result. Missing context, denial, timeout, malformed result, and transport errors fail closed with a generic error. Public chat and Builder preview have no trusted Host context.
+
+Builder resolves saved Host Action labels from the server-side Host catalog. Because those options can arrive asynchronously, the generic autocomplete synchronizes its displayed selection when the provider metadata arrives; it does not require editing or reselecting the stored `actionKey`.
 
 ## Ownership and persistence
 
