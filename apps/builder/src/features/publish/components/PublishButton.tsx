@@ -22,6 +22,7 @@ import { TextLink } from "@/components/TextLink";
 import { ChangePlanDialog } from "@/features/billing/components/ChangePlanDialog";
 import { isFreePlan } from "@/features/billing/helpers/isFreePlan";
 import { useTypebot } from "@/features/editor/providers/TypebotProvider";
+import { notifyHostStudioFlowPublished } from "@/features/publish/helpers/notifyHostStudioFlowPublished";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { useTimeSince } from "@/hooks/useTimeSince";
 import {
@@ -60,6 +61,10 @@ export const PublishButton = ({
   const versionWarningCancelRef = useRef<HTMLButtonElement | null>(null);
   const [versionWarningConfirmLoading, setVersionWarningConfirmLoading] =
     useState(false);
+  const pendingPublish = useRef<{
+    editableFlowId: string;
+    publicFlowId: string;
+  } | null>(null);
   const {
     isPublished,
     publishedTypebot,
@@ -90,6 +95,10 @@ export const PublishButton = ({
         },
         onSuccess: (data) => {
           if (!typebot?.id || currentUserMode === "guest") return;
+          if (pendingPublish.current?.editableFlowId === typebot.id) {
+            notifyHostStudioFlowPublished(pendingPublish.current);
+            pendingPublish.current = null;
+          }
           queryClient.invalidateQueries({
             queryKey: orpc.typebot.getPublishedTypebot.key(),
           });
@@ -125,8 +134,13 @@ export const PublishButton = ({
   const handlePublishClick = async () => {
     if (!typebot?.id) return;
     if (isFreePlan(workspace) && hasInputFile) return onOpen();
+    const publicFlowId = typebot.publicId ?? getPublicId(typebot);
+    pendingPublish.current = {
+      editableFlowId: typebot.id,
+      publicFlowId,
+    };
     await save(
-      !typebot.publicId ? { publicId: getPublicId(typebot) } : undefined,
+      !typebot.publicId ? { publicId: publicFlowId } : undefined,
       true,
     );
     publishTypebotMutate({

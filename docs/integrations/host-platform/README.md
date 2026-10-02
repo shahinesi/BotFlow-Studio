@@ -138,6 +138,10 @@ Workspace access still uses native Typebot membership. A native `MEMBER` invitat
 
 For management handoff to private editor routes, use official `/signin` with a trusted same-origin `callbackUrl` for OAuth and a safe root-relative `redirectPath` for an already authenticated browser. The destination can be `/typebots/{editableId}/edit` or `/typebots/create`; new Flow creation uses the currently selected native workspace. Authentication does not grant arbitrary workspace/Flow access. Issuer and Builder logout are separate; no distributed logout or iframe integration is implied.
 
+## Embedded Studio publish notification
+
+When the Builder is embedded, a successful publish emits `hostStudio.flowPublished` to the exact origin in `document.referrer`. The versioned message contains only the editable Typebot ID and its public Flow ID. Standalone publishing sends no Host message. The Host must validate `event.origin` and `event.source`, then verify the ID relationship and published status through its configured Host API before binding anything. The event is a notification only; it does not grant access or authorize an action. No wildcard target origin or Host-specific event is used.
+
 ## Adding a Host Action
 
 Implement and register the Action in the Host, add its safe `title`, `description`, primitive input definitions and controlled output hints to the Action metadata, then expose the registered metadata through the authenticated catalog endpoint. The Builder selector discovers it automatically. Runtime still resolves the same stable `actionKey` through the Host Gateway; changing/removing a key requires deliberate Host-side compatibility handling. No BotFlow block, Forge core or engine change is needed for a new Host capability.
