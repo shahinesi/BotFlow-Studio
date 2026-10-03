@@ -173,3 +173,9 @@ Builder Preview does not have a real BotUser or signed Host execution context. H
 The existing authenticated Action Catalog can optionally include `hostBlock.blockId` and `hostBlock.palette`. `placement` is either `integrations` or `host-section`; a host section has a bounded key, plain-text title, safe icon identifier (`building`, `grid`, or `shield`) and optional order. The Builder validates this data as data, resolves only registered Forge block IDs, groups cards locally, and keeps unknown/unplaced Host blocks under Integrations. A Host cannot provide markup, executable components or arbitrary icons. One cached Action Catalog query supplies the palette and block labels; runtime does not depend on it.
 
 Phone admission remains Core-owned. An unverified BotUser cannot reach the Action Gateway: Shared Core requests native self-contact and stops before Flow input. The access block does not request or store phone verification itself. Its `AUTHORIZED` result is only the configured Web permission check; subsequent business Actions must independently enforce organizational data scope through their existing services.
+
+# Embedded Studio frame policy
+
+`HOST_STUDIO_EMBED_ALLOWED_ORIGINS` is a server-side runtime setting containing comma-separated exact origins. HTTPS is required outside `NODE_ENV=development`; development may use HTTP localhost origins. Wildcards, paths, queries, and fragments are rejected.
+
+The allowlist applies only to Builder Studio routes (`/typebots/*`). Those responses use `frame-ancestors 'self'` plus the configured origins and omit `X-Frame-Options` only when external origins are configured. Sign-in and all other routes keep the secure self-only CSP and `SAMEORIGIN` header. The setting is read by the Builder runtime proxy, so changing Host origins does not require rebuilding the image.

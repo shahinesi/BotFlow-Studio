@@ -2,6 +2,7 @@ import type { StandardSchemaV1 } from "@t3-oss/env-core";
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 import { getRuntimeVariable } from "./getRuntimeVariable";
+import { isAllowedHostStudioOrigin } from "./hostStudioEmbedOrigins";
 
 declare const window: {
   __ENV?: any;
@@ -57,21 +58,6 @@ const boolean = z
   .enum(["true", "false"])
   .transform((value) => value === "true");
 
-const exactHttpOrigin = (value: string) => {
-  try {
-    const url = new URL(value);
-    return (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      url.origin === value &&
-      url.pathname === "/" &&
-      !url.search &&
-      !url.hash
-    );
-  } catch {
-    return false;
-  }
-};
-
 const baseEnv = {
   server: {
     NODE_ENV: z
@@ -91,12 +77,20 @@ const baseEnv = {
       .string()
       .optional()
       .transform((value) =>
-        value?.trim() ? value.split(",").map((origin) => origin.trim()) : [],
+        value?.trim()
+          ? [...new Set(value.split(",").map((origin) => origin.trim()))]
+          : [],
       )
-      .refine((origins) => origins.every(exactHttpOrigin), {
-        message:
-          "HOST_STUDIO_EMBED_ALLOWED_ORIGINS must contain exact HTTP(S) origins without paths or wildcards",
-      }),
+      .refine(
+        (origins) =>
+          origins.every((origin) =>
+            isAllowedHostStudioOrigin(origin, process.env.NODE_ENV),
+          ),
+        {
+          message:
+            "HOST_STUDIO_EMBED_ALLOWED_ORIGINS must contain exact HTTPS origins (or development localhost HTTP origins) without paths or wildcards",
+        },
+      ),
     DISABLE_SIGNUP: boolean.optional().default(false),
     ADMIN_EMAIL: z
       .string()

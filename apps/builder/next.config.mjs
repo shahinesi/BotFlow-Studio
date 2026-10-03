@@ -50,7 +50,9 @@ const noStoreHeaders = [
 const contentSecurityPolicy = (isDev, frameAncestors) =>
   [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:${isDev ? " http://localhost:* " : ""}`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:${
+      isDev ? " http://localhost:* " : ""
+    }`,
     "style-src 'self' 'unsafe-inline' https:",
     `connect-src 'self' https: wss:${
       isDev ? " http://localhost:* ws://localhost:*" : ""
@@ -65,12 +67,6 @@ const contentSecurityPolicy = (isDev, frameAncestors) =>
     "form-action 'self'",
     "base-uri 'self'",
   ].join("; ");
-
-const studioEmbedOrigins = () =>
-  (process.env.HOST_STUDIO_EMBED_ALLOWED_ORIGINS ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -90,8 +86,6 @@ const nextConfig = {
   outputFileTracingRoot: join(__dirname, "../../"),
   headers: async () => {
     const isDev = process.env.NODE_ENV !== "production";
-    const embedOrigins = studioEmbedOrigins();
-    const studioFrameAncestors = ["'self'", ...embedOrigins].join(" ");
     return [
       {
         source: "/((?!typebots).*)",
@@ -113,13 +107,10 @@ const nextConfig = {
       {
         source: "/typebots/:path*",
         headers: [
-          ...(embedOrigins.length
-            ? []
-            : [{ key: "X-Frame-Options", value: "SAMEORIGIN" }]),
           { key: "X-Content-Type-Options", value: "nosniff" },
           {
             key: "Content-Security-Policy",
-            value: contentSecurityPolicy(isDev, studioFrameAncestors),
+            value: contentSecurityPolicy(isDev, "'self'"),
           },
         ],
       },
