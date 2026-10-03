@@ -5,6 +5,11 @@ ARG BUN_VERSION=1.3.9
 FROM oven/bun:${BUN_VERSION}-slim AS bun
 
 FROM node:24-bookworm-slim AS runtime
+RUN apt-get update -qq \
+    && apt-get install -qq --no-install-recommends \
+    ca-certificates \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 FROM runtime AS build-base
@@ -15,9 +20,7 @@ RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 RUN apt-get update -qq \
     && apt-get install -qq --no-install-recommends \
     build-essential \
-    ca-certificates \
     g++ \
-    openssl \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -83,9 +86,9 @@ EXPOSE 3000
 ENV PORT=3000
 
 FROM release AS builder-release
-COPY --from=builder /app/packages/prisma/postgresql ./packages/prisma/postgresql
-COPY --from=builder /app/packages/prisma/prisma.config.ts ./packages/prisma/prisma.config.ts
-COPY --from=prisma-dependencies /app/node_modules ./node_modules
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --from=builder --chown=node:node /app/packages/prisma/postgresql ./packages/prisma/postgresql
+COPY --from=builder --chown=node:node /app/packages/prisma/prisma.config.ts ./packages/prisma/prisma.config.ts
+COPY --from=prisma-dependencies --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=node:node /app/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY --from=runtime-env-dependencies /runtime/node_modules ./node_modules
