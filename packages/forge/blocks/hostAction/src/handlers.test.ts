@@ -327,10 +327,13 @@ it("executes a legacy title discriminator only through its unique Host stable ke
 
 it("keeps Host actions out of real services during Builder Preview", async () => {
   let called = false;
-  globalThis.fetch = (async () => {
-    called = true;
-    throw new Error("Preview must not call Host services");
-  }) as typeof fetch;
+  globalThis.fetch = Object.assign(
+    async () => {
+      called = true;
+      throw new Error("Preview must not call Host services");
+    },
+    { preconnect: originalFetch.preconnect },
+  );
   const values: string[] = [];
   await userAccessCheckHandler.server!({
     credentials: undefined,
