@@ -12,7 +12,8 @@ RUN apt-get update -qq \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-FROM runtime AS build-base
+FROM node:24-bookworm-slim AS build-base
+WORKDIR /app
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
@@ -20,7 +21,9 @@ RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 RUN apt-get update -qq \
     && apt-get install -qq --no-install-recommends \
     build-essential \
+    ca-certificates \
     g++ \
+    openssl \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
