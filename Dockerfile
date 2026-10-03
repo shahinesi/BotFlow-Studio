@@ -36,6 +36,25 @@ RUN --mount=type=cache,id=botflow-bun,target=/root/.bun/install/cache,sharing=lo
     rm -rf node_modules \
     && SENTRYCLI_SKIP_DOWNLOAD=1 bun install --frozen-lockfile --production --filter '@typebot.io/prisma'
 
+# The shell entrypoints require this package outside Next.js standalone tracing.
+FROM runtime AS runtime-env-dependencies
+WORKDIR /runtime
+RUN mkdir -p \
+    node_modules/next-runtime-env \
+    node_modules/chalk \
+    node_modules/ansi-styles \
+    node_modules/color-convert \
+    node_modules/color-name \
+    node_modules/supports-color \
+    node_modules/has-flag
+COPY --from=dependencies /app/node_modules/next-runtime-env/ ./node_modules/next-runtime-env/
+COPY --from=dependencies /app/node_modules/chalk/ ./node_modules/chalk/
+COPY --from=dependencies /app/node_modules/ansi-styles/ ./node_modules/ansi-styles/
+COPY --from=dependencies /app/node_modules/color-convert/ ./node_modules/color-convert/
+COPY --from=dependencies /app/node_modules/color-name/ ./node_modules/color-name/
+COPY --from=dependencies /app/node_modules/supports-color/ ./node_modules/supports-color/
+COPY --from=dependencies /app/node_modules/has-flag/ ./node_modules/has-flag
+
 FROM dependencies AS builder
 ARG SCOPE
 COPY . .
@@ -52,15 +71,7 @@ ENV SCOPE=${SCOPE}
 COPY --from=builder --chown=node:node /app/apps/${SCOPE}/.next/standalone ./
 COPY --from=builder --chown=node:node /app/apps/${SCOPE}/.next/static ./apps/${SCOPE}/.next/static
 COPY --from=builder --chown=node:node /app/apps/${SCOPE}/public ./apps/${SCOPE}/public
-COPY --from=builder \
-    /app/node_modules/next-runtime-env \
-    /app/node_modules/chalk \
-    /app/node_modules/ansi-styles \
-    /app/node_modules/color-convert \
-    /app/node_modules/color-name \
-    /app/node_modules/supports-color \
-    /app/node_modules/has-flag \
-    ./node_modules/
+COPY --from=runtime-env-dependencies /runtime/node_modules ./node_modules
 
 
 COPY scripts/${SCOPE}-entrypoint.sh ./
@@ -77,3 +88,4 @@ COPY --from=builder /app/packages/prisma/prisma.config.ts ./packages/prisma/pris
 COPY --from=prisma-dependencies /app/node_modules ./node_modules
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --from=runtime-env-dependencies /runtime/node_modules ./node_modules
