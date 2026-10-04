@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "bun:test";
 import { runWithHostExecutionContext } from "@typebot.io/runtime-session-store/hostExecutionContext";
-import { hostActionHandler } from "./handlers";
+import { hostActionHandler, hostActionsFetcherHandler } from "./handlers";
 import { hostActionBlockSchema } from "./schemas";
 
 const originalFetch = globalThis.fetch;
@@ -54,7 +54,140 @@ it("registers a generic Host Action accepting arbitrary host action keys", () =>
       outputVariableId: "result",
     },
   };
-  expect(hostActionBlockSchema.safeParse(block).success).toBe(true);
+  const parsed = hostActionBlockSchema.safeParse(block);
+  expect(parsed.success).toBe(true);
+  if (parsed.success)
+    expect(parsed.data.options.actionKey).toBe("invoice.lookup");
+});
+
+it("maps primitive input types and Flow variables to JSON values", async () => {
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  globalThis.fetch = (async (_url, init) => {
+    expect(JSON.parse(String(init?.body))).toEqual({
+      inputs: { count: 12, active: true, label: "hello" },
+    });
+    return Response.json({ kind: "TEXT", text: "ok" });
+  }) as typeof fetch;
+  const variables = {
+    parse: (value: string) =>
+      value.replace("{{count}}", "12").replace("{{active}}", "true"),
+    set: () => {},
+  };
+  await runWithHostExecutionContext(trusted("signed-context"), () =>
+    hostActionHandler.server!({
+      credentials: undefined,
+      options: {
+        actionKey: "demo.echo",
+        inputs: [
+          { key: "count", type: "number", value: "{{count}}" },
+          { key: "active", type: "boolean", value: "{{active}}" },
+          { key: "label", type: "string", value: "hello" },
+        ],
+      },
+      variables,
+      logs: { add: () => {} },
+    } as never),
+  );
+});
+
+it("fetches a generic Host catalog and exposes only selector metadata", async () => {
+  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  globalThis.fetch = (async (url, init) => {
+    expect(String(url)).toBe(
+      "http://host.internal/internal/host/actions/catalog",
+    );
+    expect(init?.headers).toEqual({
+      "x-host-service-key": "host-service-secret",
+    });
+    expect(init?.redirect).toBe("error");
+    return Response.json({
+      actions: [
+        {
+          key: "demo.echo",
+          title: "Echo",
+          description: "Returns a value.",
+          inputs: [{ key: "value", type: "string", required: true }],
+          outputs: [{ key: "value", type: "string" }],
+          internalSecret: "catalog-secret-must-not-reach-builder",
+        },
+        {
+          key: "demo.lookup",
+          title: "Lookup",
+          description: "Looks up a record.",
+          inputs: [{ key: "id", type: "number" }],
+          outputs: [{ key: "found", type: "boolean" }],
+        },
+      ],
+    });
+  }) as typeof fetch;
+
+  const result = await hostActionsFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  expect(result).toMatchObject({
+    data: [
+      {
+        value: "demo.echo",
+        label: expect.stringContaining("value: string (required)"),
+      },
+      {
+        value: "demo.lookup",
+        label: expect.stringContaining("found: boolean"),
+      },
+    ],
+  });
+  expect(JSON.stringify(result)).not.toContain("host-service-secret");
+  expect(JSON.stringify(result)).not.toContain(
+    "catalog-secret-must-not-reach-builder",
+  );
+});
+
+it("returns a controlled catalog error for bad service auth or an unavailable Host", async () => {
+  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  globalThis.fetch = Object.assign(
+    async () => new Response("unauthorized", { status: 401 }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const denied = await hostActionsFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  expect(denied.error?.description).toBe("Host action catalog unavailable");
+  expect(JSON.stringify(denied)).not.toContain("host-service-secret");
+
+  globalThis.fetch = Object.assign(
+    async () => {
+      throw new Error("network details");
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const unavailable = await hostActionsFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  expect(unavailable.error?.description).toBe(
+    "Host action catalog unavailable",
+  );
+  expect(JSON.stringify(unavailable)).not.toContain("network details");
+});
+
+it("rejects malformed Host catalog metadata instead of inventing selector items", async () => {
+  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ actions: [{ key: "demo.invalid" }] }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const result = await hostActionsFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  expect(result.error?.description).toBe("Host action catalog unavailable");
+  expect(result.data).toBeUndefined();
 });
 
 it("fails closed on public execution without sending a request", async () => {
