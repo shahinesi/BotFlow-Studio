@@ -45,6 +45,9 @@
   ],
   "references": [
     {
+      "path": "../../packages/forge/blocks/hostAction"
+    },
+    {
       "path": "../../packages/embeds/js"
     },
     {
@@ -57,13 +60,13 @@
       "path": "../../packages/blocks/fileInput"
     },
     {
-      "path": "../../packages/blocks/webhook"
-    },
-    {
       "path": "../../packages/workspaces"
     },
     {
       "path": "../../packages/whatsapp"
+    },
+    {
+      "path": "../../packages/blocks/webhook"
     },
     {
       "path": "../../packages/user"

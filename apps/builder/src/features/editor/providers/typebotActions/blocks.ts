@@ -9,8 +9,8 @@ import type {
 import type { HttpRequest } from "@typebot.io/blocks-integrations/httpRequest/schema";
 import { byId } from "@typebot.io/lib/utils";
 import type { Edge } from "@typebot.io/typebot/schemas/edge";
-import type { Typebot, TypebotV6 } from "@typebot.io/typebot/schemas/typebot";
-import { type Draft, produce } from "immer";
+import type { TypebotV6 } from "@typebot.io/typebot/schemas/typebot";
+import { castDraft, type Draft, produce } from "immer";
 import { parseNewBlock } from "@/features/typebot/helpers/parseNewBlock";
 import type { SetTypebot } from "../TypebotProvider";
 import { deleteConnectedEdgesDraft, deleteEdgeDraft } from "./edges";
@@ -20,6 +20,7 @@ export type BlocksActions = {
   createBlock: (
     block: BlockV6 | BlockV6["type"],
     indices: BlockIndices,
+    options?: Record<string, unknown>,
   ) => string | undefined;
   updateBlock: (
     indices: BlockIndices,
@@ -30,6 +31,8 @@ export type BlocksActions = {
   deleteBlock: (indices: BlockIndices) => void;
 };
 
+type DraftBlock = Draft<TypebotV6>["groups"][number]["blocks"][number];
+
 export type WebhookCallBacks = {
   onWebhookBlockCreated: (data: Partial<HttpRequest>) => void;
   onWebhookBlockDuplicated: (
@@ -39,11 +42,15 @@ export type WebhookCallBacks = {
 };
 
 export const blocksAction = (setTypebot: SetTypebot): BlocksActions => ({
-  createBlock: (block: BlockV6 | BlockV6["type"], indices: BlockIndices) => {
+  createBlock: (
+    block: BlockV6 | BlockV6["type"],
+    indices: BlockIndices,
+    options?: Record<string, unknown>,
+  ) => {
     let blockId: string | undefined;
     setTypebot((typebot) =>
       produce(typebot, (typebot) => {
-        blockId = createBlockDraft(typebot, block, indices);
+        blockId = createBlockDraft(typebot, block, indices, options);
       }),
     );
     return blockId;
@@ -75,7 +82,11 @@ export const blocksAction = (setTypebot: SetTypebot): BlocksActions => ({
             typebot,
             edgeId: block.outgoingEdgeId,
           });
-        typebot.groups[groupIndex].blocks.splice(blockIndex + 1, 0, newBlock);
+        typebot.groups[groupIndex].blocks.splice(
+          blockIndex + 1,
+          0,
+          castDraft(newBlock) as DraftBlock,
+        );
         if (newEdges) {
           newEdges.forEach((edge) => {
             typebot.edges.push(edge);
@@ -106,6 +117,7 @@ export const createBlockDraft = (
   typebot: Draft<TypebotV6>,
   block: BlockV6 | BlockV6["type"],
   { groupIndex, blockIndex }: BlockIndices,
+  options?: Record<string, unknown>,
 ) => {
   const blocks = typebot.groups[groupIndex].blocks;
   if (
@@ -120,19 +132,24 @@ export const createBlockDraft = (
     });
   const blockId =
     typeof block === "string"
-      ? createNewBlock(typebot, block, { groupIndex, blockIndex })
+      ? createNewBlock(typebot, block, { groupIndex, blockIndex }, options)
       : moveBlockToGroup(typebot, block, { groupIndex, blockIndex });
   removeEmptyGroups(typebot);
   return blockId;
 };
 
 const createNewBlock = (
-  typebot: Draft<Typebot>,
+  typebot: Draft<TypebotV6>,
   type: BlockV6["type"],
   { groupIndex, blockIndex }: BlockIndices,
+  options?: Record<string, unknown>,
 ) => {
-  const newBlock = parseNewBlock(type);
-  typebot.groups[groupIndex].blocks.splice(blockIndex ?? 0, 0, newBlock);
+  const newBlock = parseNewBlock(type, options);
+  typebot.groups[groupIndex].blocks.splice(
+    blockIndex ?? 0,
+    0,
+    castDraft(newBlock) as DraftBlock,
+  );
   return newBlock.id;
 };
 
@@ -161,7 +178,11 @@ const moveBlockToGroup = (
       edge.to.groupId = groupId;
     }
   });
-  typebot.groups[groupIndex].blocks.splice(blockIndex ?? 0, 0, newBlock);
+  typebot.groups[groupIndex].blocks.splice(
+    blockIndex ?? 0,
+    0,
+    castDraft(newBlock) as DraftBlock,
+  );
   return newBlock.id;
 };
 

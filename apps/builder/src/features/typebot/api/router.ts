@@ -3,6 +3,10 @@ import {
   publicProcedureWithOptionalUser,
 } from "@typebot.io/config/orpc/builder/middlewares";
 import {
+  getHostActionCatalog,
+  hostActionCatalogSchema,
+} from "@typebot.io/host-action-block/handlers";
+import {
   publicTypebotSchema,
   publicTypebotSchemaV5,
   publicTypebotSchemaV6,
@@ -214,6 +218,13 @@ const isPublicIdAvailable = authenticatedProcedure
   .input(isPublicIdAvailableInputSchema)
   .handler(handleIsPublicIdAvailable);
 
+const listHostActions = authenticatedProcedure
+  .input(z.object({}))
+  .output(hostActionCatalogSchema)
+  .handler(async () => ({
+    actions: (await getHostActionCatalog())?.actions ?? [],
+  }));
+
 export type TypebotRouter = {
   createTypebot: typeof createTypebot;
   getTypebot: typeof getTypebot;
@@ -226,6 +237,7 @@ export type TypebotRouter = {
   importTypebot: typeof importTypebot;
   getTypebotBlocks: typeof getTypebotBlocks;
   isPublicIdAvailable: typeof isPublicIdAvailable;
+  listHostActions: typeof listHostActions;
 };
 
 export const typebotRouter: TypebotRouter = {
@@ -240,4 +252,5 @@ export const typebotRouter: TypebotRouter = {
   importTypebot,
   getTypebotBlocks,
   isPublicIdAvailable,
+  listHostActions,
 };

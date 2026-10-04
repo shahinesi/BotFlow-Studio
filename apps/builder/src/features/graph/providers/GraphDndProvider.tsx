@@ -37,6 +37,10 @@ export type DraggableItem = Exclude<ItemV6, AbTestBlock["items"][number]> & {
 const graphDndContext = createContext<{
   draggedBlockType?: BlockV6["type"];
   setDraggedBlockType: Dispatch<SetStateAction<BlockV6["type"] | undefined>>;
+  draggedBlockOptions?: Record<string, unknown>;
+  setDraggedBlockOptions: Dispatch<
+    SetStateAction<Record<string, unknown> | undefined>
+  >;
   draggedBlock?: BlockV6 & { groupId: string };
   setDraggedBlock: Dispatch<
     SetStateAction<(BlockV6 & { groupId: string }) | undefined>
@@ -62,6 +66,9 @@ export const GraphDndProvider = ({ children }: { children: ReactNode }) => {
   >();
   const [draggedBlockType, setDraggedBlockType] = useState<
     BlockV6["type"] | undefined
+  >();
+  const [draggedBlockOptions, setDraggedBlockOptions] = useState<
+    Record<string, unknown> | undefined
   >();
   const [draggedItem, setDraggedItem] = useState<DraggableItem | undefined>();
   const [draggedEventType, setDraggedEventType] = useState<
@@ -104,6 +111,8 @@ export const GraphDndProvider = ({ children }: { children: ReactNode }) => {
         setDraggedBlock,
         draggedBlockType,
         setDraggedBlockType,
+        draggedBlockOptions,
+        setDraggedBlockOptions,
         draggedItem,
         setDraggedItem,
         mouseOverGroup,

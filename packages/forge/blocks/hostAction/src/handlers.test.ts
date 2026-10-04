@@ -1,7 +1,16 @@
 import { afterEach, expect, it } from "bun:test";
 import { runWithHostExecutionContext } from "@typebot.io/runtime-session-store/hostExecutionContext";
-import { hostActionHandler, hostActionsFetcherHandler } from "./handlers";
-import { hostActionBlockSchema } from "./schemas";
+import {
+  hostActionCatalogSchema,
+  hostActionHandler,
+  hostActionsFetcherHandler,
+  hostCapabilitiesFetcherHandler,
+  hostCapabilityCheckHandler,
+} from "./handlers";
+import {
+  hostActionBlockSchema,
+  hostCapabilityCheckBlockSchema,
+} from "./schemas";
 
 const originalFetch = globalThis.fetch;
 const originalUrl = process.env.HOST_API_BASE_URL;
@@ -13,11 +22,11 @@ afterEach(() => {
   process.env.HOST_SERVICE_AUTH_KEY = originalKey;
 });
 
-const execute = (values: string[], logs: string[], isPreview = false) =>
+const execute = (values: string[], logs: string[]) =>
   hostActionHandler.server!({
     credentials: undefined,
     options: {
-      actionKey: "example.echo",
+      actionKey: "system.whoami",
       inputs: [{ key: "name", value: "{{userName}}" }],
       outputVariableId: "result",
     },
@@ -26,7 +35,6 @@ const execute = (values: string[], logs: string[], isPreview = false) =>
       set: (items: { value: unknown }[]) => values.push(String(items[0].value)),
     },
     logs: { add: (entry: unknown) => logs.push(String(entry)) },
-    isPreview,
   } as never);
 
 const trusted = (signedContext: string) => ({
@@ -58,6 +66,47 @@ it("registers a generic Host Action accepting arbitrary host action keys", () =>
   expect(parsed.success).toBe(true);
   if (parsed.success)
     expect(parsed.data.options.actionKey).toBe("invoice.lookup");
+});
+
+it("parses a Host capability block with stable action and capability keys", () => {
+  const parsed = hostCapabilityCheckBlockSchema.safeParse({
+    id: "capability-check-a",
+    type: "host-capability-check",
+    options: {
+      action: "hostCapabilityCheck",
+      hostActionKey: "demo.capabilities",
+      capabilityKey: "reports.read",
+      outputVariableId: "capability-result",
+    },
+  });
+  expect(parsed.success).toBe(true);
+  if (parsed.success)
+    expect(parsed.data.options).toMatchObject({
+      hostActionKey: "demo.capabilities",
+      capabilityKey: "reports.read",
+    });
+});
+
+it("keeps capability block identity in its stable type and keys", () => {
+  const parsed = hostCapabilityCheckBlockSchema.safeParse({
+    id: "capability-check-b",
+    type: "host-capability-check",
+    options: {
+      action: "hostCapabilityCheck",
+      hostActionKey: "demo.capabilities",
+      capabilityKey: "reports.read",
+      displayTitle: "Host-supplied text does not define identity",
+      outputVariableId: "capability-result",
+    },
+  });
+  expect(parsed.success).toBe(true);
+  expect(
+    hostCapabilityCheckBlockSchema.safeParse({
+      id: "capability-check-c",
+      type: "host-user-access-check",
+      options: {},
+    }).success,
+  ).toBe(false);
 });
 
 it("maps primitive input types and Flow variables to JSON values", async () => {
@@ -92,11 +141,11 @@ it("maps primitive input types and Flow variables to JSON values", async () => {
 });
 
 it("fetches a generic Host catalog and exposes only selector metadata", async () => {
-  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
   process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
   globalThis.fetch = (async (url, init) => {
     expect(String(url)).toBe(
-      "http://host.internal/internal/host/actions/catalog",
+      "http://localhost:1234/internal/host/actions/catalog",
     );
     expect(init?.headers).toEqual({
       "x-host-service-key": "host-service-secret",
@@ -145,8 +194,201 @@ it("fetches a generic Host catalog and exposes only selector metadata", async ()
   );
 });
 
+it("exposes safe capability and palette metadata from the Host catalog", async () => {
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  globalThis.fetch = Object.assign(
+    async () =>
+      Response.json({
+        actions: [
+          {
+            key: "demo.echo",
+            title: "Echo",
+            description: "Returns a value.",
+            inputs: [],
+            outputs: [],
+          },
+          {
+            key: "demo.capabilities",
+            title: "Capabilities",
+            description: "Checks Host-defined capabilities.",
+            inputs: [{ key: "capabilityKey", type: "string", required: true }],
+            outputs: [{ key: "outcome", type: "string" }],
+            hostBlock: {
+              type: "CAPABILITY_CHECK",
+              blockId: "host-capability-check",
+              capabilities: [
+                {
+                  key: "reports.read",
+                  title: "Read reports",
+                  description: "Allows report access.",
+                },
+              ],
+              palette: {
+                placement: "host-section",
+                section: {
+                  key: "operations",
+                  title: "Operations",
+                  icon: "shield",
+                  order: 2,
+                },
+              },
+            },
+            internalRoute: "/private/report",
+          },
+        ],
+      }),
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const generic = await hostActionsFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  const choices = await hostCapabilitiesFetcherHandler.fetch({
+    credentials: undefined,
+    options: {},
+  });
+  expect(generic.data).toHaveLength(1);
+  expect(generic.data).toMatchObject([{ value: "demo.echo" }]);
+  expect(choices).toEqual({
+    data: [
+      {
+        value: "reports.read",
+        label: "Read reports — Allows report access.",
+      },
+    ],
+  });
+  expect(JSON.stringify(choices)).not.toMatch(
+    /demo\.capabilities|host-service-secret|internalRoute|private\/report/,
+  );
+});
+
+it("rejects arbitrary palette icon URLs", () => {
+  const result = hostActionCatalogSchema.safeParse({
+    actions: [
+      {
+        key: "demo.capabilities",
+        title: "Capabilities",
+        description: "Checks Host-defined capabilities.",
+        inputs: [],
+        outputs: [],
+        hostBlock: {
+          type: "CAPABILITY_CHECK",
+          blockId: "host-capability-check",
+          capabilities: [],
+          palette: {
+            placement: "host-section",
+            section: {
+              key: "operations",
+              title: "Operations",
+              icon: "https://example.test/icon.svg",
+            },
+          },
+        },
+      },
+    ],
+  });
+  expect(result.success).toBe(false);
+});
+
+it("executes a configured capability check and stores its normalized result", async () => {
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  const values: string[] = [];
+  globalThis.fetch = (async (url, init) => {
+    expect(String(url)).toBe(
+      "http://localhost:1234/internal/host/actions/demo.capabilities",
+    );
+    expect(init?.headers).toMatchObject({
+      "x-host-service-key": "host-service-secret",
+      "x-host-execution-context": "signed-host-context",
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      inputs: { capabilityKey: "reports.read" },
+    });
+    return Response.json({ kind: "TEXT", text: "ALLOWED" });
+  }) as typeof fetch;
+  await runWithHostExecutionContext(trusted("signed-host-context"), () =>
+    hostCapabilityCheckHandler.server!({
+      credentials: undefined,
+      options: {
+        action: "hostCapabilityCheck",
+        hostActionKey: "demo.capabilities",
+        capabilityKey: "reports.read",
+        outputVariableId: "capability-result",
+      },
+      variables: {
+        set: (items: { value: unknown }[]) =>
+          values.push(String(items[0].value)),
+      },
+      logs: { add: () => {} },
+    } as never),
+  );
+  expect(values).toEqual(["ALLOWED"]);
+});
+
+it("keeps Host actions out of real services during Builder Preview", async () => {
+  let called = false;
+  globalThis.fetch = Object.assign(
+    async () => {
+      called = true;
+      throw new Error("Preview must not call Host services");
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const values: string[] = [];
+  await hostCapabilityCheckHandler.server!({
+    credentials: undefined,
+    isPreview: true,
+    options: {
+      action: "hostCapabilityCheck",
+      hostActionKey: "demo.capabilities",
+      capabilityKey: "reports.read",
+      outputVariableId: "capability-result",
+    },
+    variables: {
+      set: (items: { value: unknown }[]) => values.push(String(items[0].value)),
+    },
+    logs: { add: () => {} },
+  } as never);
+  expect(called).toBe(false);
+  expect(values).toEqual(["DENIED"]);
+});
+
+it("rejects non-normalized capability outcomes and does not store them", async () => {
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
+  process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
+  const values: string[] = [];
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ kind: "TEXT", text: "FORGED_ALLOWED" }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const logs: string[] = [];
+  await expect(
+    runWithHostExecutionContext(trusted("signed-context"), () =>
+      hostCapabilityCheckHandler.server!({
+        credentials: undefined,
+        options: {
+          action: "hostCapabilityCheck",
+          hostActionKey: "demo.capabilities",
+          capabilityKey: "reports.read",
+          outputVariableId: "capability-result",
+        },
+        variables: {
+          set: (items: { value: unknown }[]) =>
+            values.push(String(items[0].value)),
+        },
+        logs: { add: (entry: unknown) => logs.push(String(entry)) },
+      } as never),
+    ),
+  ).rejects.toThrow("Host capability check unavailable");
+  expect(values).toEqual([]);
+  expect(logs).toEqual(["Host capability check unavailable"]);
+});
+
 it("returns a controlled catalog error for bad service auth or an unavailable Host", async () => {
-  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
   process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
   globalThis.fetch = Object.assign(
     async () => new Response("unauthorized", { status: 401 }),
@@ -176,7 +418,7 @@ it("returns a controlled catalog error for bad service auth or an unavailable Ho
 });
 
 it("rejects malformed Host catalog metadata instead of inventing selector items", async () => {
-  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_API_BASE_URL = "http://localhost:1234";
   process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
   globalThis.fetch = Object.assign(
     async () => Response.json({ actions: [{ key: "demo.invalid" }] }),
@@ -203,21 +445,6 @@ it("fails closed on public execution without sending a request", async () => {
   expect(called).toBe(false);
 });
 
-it("does not call the Host from Builder preview", async () => {
-  let called = false;
-  globalThis.fetch = Object.assign(
-    async () => {
-      called = true;
-      throw new Error();
-    },
-    { preconnect: originalFetch.preconnect },
-  );
-  const logs: string[] = [];
-  await execute([], logs, true);
-  expect(called).toBe(false);
-  expect(logs).toEqual([]);
-});
-
 it("calls the configured Host Action endpoint and stores only controlled output", async () => {
   process.env.HOST_API_BASE_URL = "http://localhost:1234";
   process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";
@@ -225,7 +452,7 @@ it("calls the configured Host Action endpoint and stores only controlled output"
   const logs: string[] = [];
   globalThis.fetch = (async (url, init) => {
     expect(String(url)).toBe(
-      "http://localhost:1234/internal/host/actions/example.echo",
+      "http://localhost:1234/internal/host/actions/system.whoami",
     );
     expect(init?.redirect).toBe("error");
     expect(init?.headers).toMatchObject({

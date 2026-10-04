@@ -25,7 +25,8 @@ const getAuthTypeFromBlockId = (blockId: ForgedBlockDefinition["id"]) => {
   if (
     blockId === "cal-com" ||
     blockId === "qr-code" ||
-    blockId === "host-action"
+    blockId === "host-action" ||
+    blockId === "host-capability-check"
   )
     throw new Error("Block has no auth");
   return blockId;

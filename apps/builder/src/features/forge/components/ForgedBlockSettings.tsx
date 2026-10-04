@@ -20,7 +20,6 @@ export const ForgedBlockSettings = ({ block, onOptionsChange }: Props) => {
     action: block.options?.action,
   });
   const { isOpen, onOpen, onClose } = useOpenControls();
-
   const updateCredentialsId = (credentialsId?: string) => {
     onOptionsChange({
       ...block.options,

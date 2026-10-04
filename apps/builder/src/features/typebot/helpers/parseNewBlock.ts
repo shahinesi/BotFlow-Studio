@@ -29,10 +29,14 @@ const parseDefaultItems = (type: BlockWithItems["type"]): ItemV6[] => {
   }
 };
 
-export const parseNewBlock = (type: BlockV6["type"]) =>
+export const parseNewBlock = (
+  type: BlockV6["type"],
+  options?: Record<string, unknown>,
+) =>
   ({
     id: createId(),
     type,
+    ...(options ? { options } : undefined),
 
     ...(blockTypeHasItems(type)
       ? { items: parseDefaultItems(type) }

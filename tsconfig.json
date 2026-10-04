@@ -154,9 +154,6 @@
       "path": "./packages/whatsapp"
     },
     {
-      "path": "./apps/landing-page"
-    },
-    {
       "path": "./packages/billing"
     },
     {

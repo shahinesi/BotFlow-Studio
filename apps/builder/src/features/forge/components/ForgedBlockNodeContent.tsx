@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { BubbleBlockType } from "@typebot.io/blocks-bubbles/constants";
 import type { BlockIndices } from "@typebot.io/blocks-core/schemas/schema";
 import type { ForgedBlock } from "@typebot.io/forge-repository/schemas";
@@ -7,6 +8,8 @@ import { cn } from "@typebot.io/ui/lib/cn";
 import { useMemo } from "react";
 import { SetVariableLabel } from "@/components/SetVariableLabel";
 import { useTypebot } from "@/features/editor/providers/TypebotProvider";
+import { findHostBlockAction } from "@/features/forge/helpers/hostBlockMetadata";
+import { orpc } from "@/lib/queryClient";
 import { useForgedBlock } from "../hooks/useForgedBlock";
 
 type Props = {
@@ -19,6 +22,17 @@ export const ForgedBlockNodeContent = ({ block, indices }: Props) => {
     action: block.options?.action,
   });
   const { typebot } = useTypebot();
+  const { data: hostCatalog } = useQuery({
+    ...orpc.typebot.listHostActions.queryOptions({ input: {} }),
+    enabled: blockDef?.tags?.includes("host") ?? false,
+    staleTime: 60_000,
+  });
+  const hostCapability = hostCatalog
+    ? findHostBlockAction(hostCatalog.actions, {
+        blockType: block.type,
+        hostActionKey: block.options?.hostActionKey,
+      })
+    : undefined;
 
   const isStreamingNextBlock = useMemo(() => {
     if (!actionDef?.getStreamVariableId) return false;
@@ -59,11 +73,13 @@ export const ForgedBlockNodeContent = ({ block, indices }: Props) => {
           isConfigured ? "text-gray-12" : "text-gray-9",
         )}
       >
-        {isConfigured
-          ? actionDef?.parseBlockNodeLabel
-            ? actionDef.parseBlockNodeLabel(block.options)
-            : block.options.action
-          : "Configure..."}
+        {blockDef?.tags?.includes("host")
+          ? (hostCapability?.title ?? "Host capability unavailable")
+          : isConfigured
+            ? actionDef?.parseBlockNodeLabel
+              ? actionDef.parseBlockNodeLabel(block.options)
+              : block.options.action
+            : "Configure..."}
       </p>
       {typebot &&
         isConfigured &&
