@@ -76,20 +76,28 @@ export const CreateNewTypebotButtons = () => {
       });
   };
 
-  const handleTemplateChoose = ({
-    templateSlug,
-    fromTemplate,
-  }: {
-    templateSlug: string;
-    fromTemplate: string;
-  }) => {
+  const handleTemplateChoose = (
+    selection:
+      | {
+          kind: "builtin";
+          templateSlug: string;
+          fromTemplate: string;
+        }
+      | {
+          kind: "host";
+          hostTemplateKey: string;
+          fromTemplate: string;
+        },
+  ) => {
     if (!user || !workspace) return;
     const folderId = router.query.folderId?.toString() ?? null;
     importTypebot({
       workspaceId: workspace.id,
-      templateSlug,
+      ...(selection.kind === "host"
+        ? { hostTemplateKey: selection.hostTemplateKey }
+        : { templateSlug: selection.templateSlug }),
       folderId,
-      fromTemplate,
+      fromTemplate: selection.fromTemplate,
     });
   };
 

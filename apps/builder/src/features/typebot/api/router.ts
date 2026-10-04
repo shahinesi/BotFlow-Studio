@@ -14,6 +14,10 @@ import {
 } from "@typebot.io/typebot/schemas/typebot";
 import { z } from "zod";
 import {
+  getHostTemplateCatalog,
+  hostTemplateCatalogSchema,
+} from "@/features/templates/api/hostTemplateApi";
+import {
   createTypebotInputSchema,
   handleCreateTypebot,
 } from "./handleCreateTypebot";
@@ -206,6 +210,18 @@ const importTypebot = authenticatedProcedure
   .output(z.object({ typebot: typebotV6Schema }))
   .handler(handleImportTypebot);
 
+const listHostTemplates = authenticatedProcedure
+  .route({
+    method: "GET",
+    path: "/v1/host/templates",
+    operationId: "host-listTemplates",
+    summary: "List Host templates",
+    tags: ["Host"],
+  })
+  .input(z.object({}))
+  .output(hostTemplateCatalogSchema)
+  .handler(getHostTemplateCatalog);
+
 const getTypebotBlocks = authenticatedProcedure
   .input(getTypebotBlocksInputSchema)
   .handler(handleGetTypebotBlocks);
@@ -224,6 +240,7 @@ export type TypebotRouter = {
   unpublishTypebot: typeof unpublishTypebot;
   getPublishedTypebot: typeof getPublishedTypebot;
   importTypebot: typeof importTypebot;
+  listHostTemplates: typeof listHostTemplates;
   getTypebotBlocks: typeof getTypebotBlocks;
   isPublicIdAvailable: typeof isPublicIdAvailable;
 };
@@ -238,6 +255,7 @@ export const typebotRouter: TypebotRouter = {
   unpublishTypebot,
   getPublishedTypebot,
   importTypebot,
+  listHostTemplates,
   getTypebotBlocks,
   isPublicIdAvailable,
 };
