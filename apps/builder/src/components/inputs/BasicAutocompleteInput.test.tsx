@@ -1,110 +1,199 @@
 import { afterEach, expect, it } from "bun:test";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { JSDOM } from "jsdom";
+import { act, type ComponentProps } from "react";
+import type { Root } from "react-dom/client";
 import { BasicAutocompleteInput } from "./BasicAutocompleteInput";
 
-type TestDom = {
-  window: {
-    document: Document;
-    Element: typeof Element;
-    HTMLElement: typeof HTMLElement;
-    Node: typeof Node;
-    MutationObserver: typeof MutationObserver;
-    getComputedStyle: Window["getComputedStyle"];
-    close: () => void;
-  };
+const globalKeys = [
+  "window",
+  "document",
+  "Element",
+  "HTMLElement",
+  "Node",
+  "MutationObserver",
+  "getComputedStyle",
+  "IS_REACT_ACT_ENVIRONMENT",
+] as const;
+type GlobalKey = (typeof globalKeys)[number];
+
+let originalGlobals = new Map<GlobalKey, PropertyDescriptor | undefined>();
+let root: Root | undefined;
+let dom: JSDOM | undefined;
+
+const renderInput = async (
+  container: HTMLElement,
+  props: ComponentProps<typeof BasicAutocompleteInput>,
+) => {
+  if (!root) {
+    const { createRoot } = await import("react-dom/client");
+    root = createRoot(container);
+  }
+  await act(async () => root?.render(<BasicAutocompleteInput {...props} />));
 };
 
-const JSDOM: new (html: string) => TestDom = require("jsdom").JSDOM;
-let root: Root | undefined;
-let dom: TestDom | undefined;
+const setupDom = () => {
+  dom = new JSDOM("<!doctype html><div id='root'></div>");
+  for (const key of globalKeys)
+    originalGlobals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, writable: true, value: dom.window },
+    document: {
+      configurable: true,
+      writable: true,
+      value: dom.window.document,
+    },
+    Element: { configurable: true, writable: true, value: dom.window.Element },
+    HTMLElement: {
+      configurable: true,
+      writable: true,
+      value: dom.window.HTMLElement,
+    },
+    Node: { configurable: true, writable: true, value: dom.window.Node },
+    MutationObserver: {
+      configurable: true,
+      writable: true,
+      value: dom.window.MutationObserver,
+    },
+    getComputedStyle: {
+      configurable: true,
+      writable: true,
+      value: dom.window.getComputedStyle.bind(dom.window),
+    },
+    IS_REACT_ACT_ENVIRONMENT: {
+      configurable: true,
+      writable: true,
+      value: true,
+    },
+  });
+
+  const container = dom.window.document.getElementById("root");
+  if (!container) throw new Error("Test root element was not created");
+  return container;
+};
 
 afterEach(async () => {
   if (root) await act(async () => root?.unmount());
   dom?.window.close();
   root = undefined;
   dom = undefined;
+
+  for (const key of globalKeys) {
+    const descriptor = originalGlobals.get(key);
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else Reflect.deleteProperty(globalThis, key);
+  }
+  originalGlobals = new Map();
 });
 
-it("rehydrates a persisted provider selection when options arrive after mount", async () => {
-  dom = new JSDOM("<!doctype html><div id='root'></div>");
-  Object.assign(globalThis, {
-    window: dom.window,
-    document: dom.window.document,
-    Element: dom.window.Element,
-    HTMLElement: dom.window.HTMLElement,
-    Node: dom.window.Node,
-    MutationObserver: dom.window.MutationObserver,
-    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
-    IS_REACT_ACT_ENVIRONMENT: true,
-  });
-
-  const container = dom.window.document.getElementById("root");
-  if (!container) throw new Error("Test root element was not created");
-
-  root = createRoot(container);
+it("resolves the persisted provider selection when async labels arrive", async () => {
+  const container = setupDom();
   let changeCount = 0;
   const onChange = () => {
     changeCount++;
   };
-  const unknownLabel = "cashier-report-read (not listed by the provider)";
-  const catalogLabel = "مشاهده گزارش صندوق — Host description";
+  const unresolvedLabel = "cashier-report-read (not listed by the provider)";
+  const resolvedLabel = "مشاهده گزارش صندوق";
 
-  await act(async () => {
-    root?.render(
-      <BasicAutocompleteInput
-        items={[unknownLabel]}
-        defaultValue={unknownLabel}
-        onChange={onChange}
-      />,
-    );
+  await renderInput(container, {
+    items: [unresolvedLabel],
+    defaultValue: unresolvedLabel,
+    onChange,
   });
-  expect(container.querySelector("input")?.value).toBe(unknownLabel);
-  const inputBeforeHydration = container.querySelector("input");
+  const inputBeforeResolution = container.querySelector<HTMLInputElement>(
+    '[data-slot="autocomplete-input"]',
+  );
+  expect(inputBeforeResolution?.value).toBe(unresolvedLabel);
 
-  await act(async () => {
-    root?.render(
-      <BasicAutocompleteInput
-        items={[catalogLabel]}
-        defaultValue={catalogLabel}
-        onChange={onChange}
-      />,
-    );
+  await renderInput(container, {
+    items: [resolvedLabel],
+    defaultValue: resolvedLabel,
+    onChange,
   });
 
-  expect(container.querySelector("input")).toBe(inputBeforeHydration);
-  expect(container.querySelector("input")?.value).toBe(catalogLabel);
+  expect(container.querySelector('[data-slot="autocomplete-input"]')).toBe(
+    inputBeforeResolution,
+  );
+  expect(inputBeforeResolution?.value).toBe(resolvedLabel);
   expect(changeCount).toBe(0);
 });
 
-it("keeps an unknown persisted provider selection unresolved", async () => {
-  dom = new JSDOM("<!doctype html><div id='root'></div>");
-  Object.assign(globalThis, {
-    window: dom.window,
-    document: dom.window.document,
-    Element: dom.window.Element,
-    HTMLElement: dom.window.HTMLElement,
-    Node: dom.window.Node,
-    MutationObserver: dom.window.MutationObserver,
-    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
-    IS_REACT_ACT_ENVIRONMENT: true,
+it("preserves an in-progress draft and its caret while async labels arrive", async () => {
+  const container = setupDom();
+  const changes: Array<string | undefined> = [];
+  const unresolvedLabel = "cashier-report-read (not listed by the provider)";
+  const resolvedLabel = "مشاهده گزارش صندوق";
+
+  await renderInput(container, {
+    items: [unresolvedLabel],
+    defaultValue: unresolvedLabel,
+    debounceTimeout: 1000,
+    onChange: (value) => changes.push(value),
   });
 
-  const container = dom.window.document.getElementById("root");
-  if (!container) throw new Error("Test root element was not created");
-
-  root = createRoot(container);
-  const unknownLabel = "removed-access-key (not listed by the provider)";
+  const input = container.querySelector<HTMLInputElement>(
+    '[data-slot="autocomplete-input"]',
+  );
+  const nativeValueSetter = Object.getOwnPropertyDescriptor(
+    dom?.window.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  if (!input || !nativeValueSetter)
+    throw new Error("Autocomplete input missing");
 
   await act(async () => {
-    root?.render(
-      <BasicAutocompleteInput
-        items={[unknownLabel, "Different Host option"]}
-        defaultValue={unknownLabel}
-        onChange={() => {}}
-      />,
+    nativeValueSetter.call(input, "typed draft");
+    input.setSelectionRange(5, 5);
+    input.dispatchEvent(
+      new (dom?.window.InputEvent ?? InputEvent)("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: "d",
+      }),
     );
   });
+  expect(input.value).toBe("typed draft");
+  expect(changes).toEqual([]);
 
-  expect(container.querySelector("input")?.value).toBe(unknownLabel);
+  await renderInput(container, {
+    items: [resolvedLabel],
+    defaultValue: resolvedLabel,
+    debounceTimeout: 1000,
+    onChange: (value) => changes.push(value),
+  });
+
+  expect(container.querySelector('[data-slot="autocomplete-input"]')).toBe(
+    input,
+  );
+  expect(input.value).toBe("typed draft");
+  expect(input.selectionStart).toBe(5);
+  expect(changes).toEqual([]);
+
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 1010)));
+  expect(changes).toEqual(["typed draft"]);
+  expect(input.value).toBe("typed draft");
+});
+
+it("keeps a genuinely unknown provider value unresolved", async () => {
+  const container = setupDom();
+  let changeCount = 0;
+  const unknownValue = "removed-access-key (not listed by the provider)";
+
+  await renderInput(container, {
+    items: [unknownValue],
+    defaultValue: unknownValue,
+    onChange: () => changeCount++,
+  });
+  await renderInput(container, {
+    items: ["another Host option"],
+    defaultValue: unknownValue,
+    onChange: () => changeCount++,
+  });
+
+  expect(
+    container.querySelector<HTMLInputElement>(
+      '[data-slot="autocomplete-input"]',
+    )?.value,
+  ).toBe(unknownValue);
+  expect(changeCount).toBe(0);
 });
