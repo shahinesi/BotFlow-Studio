@@ -1,3 +1,4 @@
+# Both application containers load .env.docker; include HOST_SESSION_BINDING_KEY there.
 services:
   typebot-db-docker:
     image: postgres:16

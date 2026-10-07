@@ -59,6 +59,8 @@ export const Graph = ({
   const {
     draggedBlockType,
     setDraggedBlockType,
+    draggedBlockOptions,
+    setDraggedBlockOptions,
     draggedEventType,
     setDraggedEventType,
     draggedBlock,
@@ -196,10 +198,12 @@ export const Graph = ({
         id,
         ...coordinates,
         block: draggedBlock ?? (draggedBlockType as BlockV6["type"]),
+        blockOptions: draggedBlockOptions,
         indices: { groupIndex: typebot.groups.length, blockIndex: 0 },
       });
       setDraggedBlock(undefined);
       setDraggedBlockType(undefined);
+      setDraggedBlockOptions(undefined);
       if (newBlockId && shouldOpenBlockSettingsOnCreation(draggedBlockType)) {
         setTimeout(() => {
           setOpenedNodeId(newBlockId);

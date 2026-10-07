@@ -2,6 +2,7 @@ import type { StandardSchemaV1 } from "@t3-oss/env-core";
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 import { getRuntimeVariable } from "./getRuntimeVariable";
+import { isAllowedHostStudioOrigin } from "./hostStudioEmbedOrigins";
 
 declare const window: {
   __ENV?: any;
@@ -72,6 +73,24 @@ const baseEnv = {
       guessNextAuthUrlForVercelPreview,
       z.string().url(),
     ),
+    HOST_STUDIO_EMBED_ALLOWED_ORIGINS: z
+      .string()
+      .optional()
+      .transform((value) =>
+        value?.trim()
+          ? [...new Set(value.split(",").map((origin) => origin.trim()))]
+          : [],
+      )
+      .refine(
+        (origins) =>
+          origins.every((origin) =>
+            isAllowedHostStudioOrigin(origin, process.env.NODE_ENV),
+          ),
+        {
+          message:
+            "HOST_STUDIO_EMBED_ALLOWED_ORIGINS must contain exact HTTPS origins (or development localhost HTTP origins) without paths or wildcards",
+        },
+      ),
     DISABLE_SIGNUP: boolean.optional().default(false),
     ADMIN_EMAIL: z
       .string()
@@ -233,6 +252,7 @@ const customOAuthEnv = {
       .default("openid profile email"),
     CUSTOM_OAUTH_CLIENT_ID: z.string().min(1).optional(),
     CUSTOM_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+    CUSTOM_OAUTH_USE_USERINFO: boolean.optional().default(false),
     CUSTOM_OAUTH_WELL_KNOWN_URL: z.string().url().optional(),
     CUSTOM_OAUTH_USER_ID_PATH: z.string().min(1).optional().default("id"),
     CUSTOM_OAUTH_USER_EMAIL_PATH: z.string().min(1).optional().default("email"),

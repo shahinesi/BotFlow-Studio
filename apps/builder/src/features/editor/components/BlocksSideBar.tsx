@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useTranslate } from "@tolgee/react";
 import { BubbleBlockType } from "@typebot.io/blocks-bubbles/constants";
 import type { BlockV6 } from "@typebot.io/blocks-core/schemas/schema";
@@ -19,7 +20,9 @@ import { useRef, useState } from "react";
 import { useDebouncedCallback } from "use-debounce";
 import { Portal } from "@/components/Portal";
 import { useBlockDnd } from "@/features/graph/providers/GraphDndProvider";
+import { hostCapabilityActionName } from "@/features/templates/helpers/hostBlockMetadata";
 import { useEventListener } from "@/hooks/useEventListener";
+import { orpc } from "@/lib/queryClient";
 import { EventCard } from "../../events/components/EventCard";
 import { EventCardOverlay } from "../../events/components/EventCardOverlay";
 import { getEventBlockLabel } from "../../events/components/EventLabel";
@@ -40,6 +43,7 @@ export const BlocksSideBar = () => {
   const { t } = useTranslate();
   const {
     setDraggedBlockType,
+    setDraggedBlockOptions,
     draggedBlockType,
     draggedEventType,
     setDraggedEventType,
@@ -59,6 +63,10 @@ export const BlocksSideBar = () => {
     localStorage.getItem(leftSidebarLockedStorageKey) !== "false",
   );
   const [searchInput, setSearchInput] = useState("");
+  const { data: hostActionCatalog } = useQuery({
+    ...orpc.typebot.listHostActions.queryOptions({ input: {} }),
+    staleTime: 60_000,
+  });
   const sidebarRef = useRef<HTMLDivElement>(null);
   const dockBarRef = useRef<HTMLButtonElement>(null);
 
@@ -88,7 +96,11 @@ export const BlocksSideBar = () => {
   };
   useEventListener("pointermove", handlePointerMove);
 
-  const initBlockDragging = (e: React.PointerEvent, type: BlockV6["type"]) => {
+  const initBlockDragging = (
+    e: React.PointerEvent,
+    type: BlockV6["type"],
+    options?: Record<string, unknown>,
+  ) => {
     if (!e.isPrimary || e.button !== 0) return;
     const element = e.currentTarget as HTMLElement;
     const rect = element.getBoundingClientRect();
@@ -97,6 +109,7 @@ export const BlocksSideBar = () => {
     const y = e.clientY - rect.top;
     setRelativeCoordinates({ x, y });
     setDraggedBlockType(type);
+    setDraggedBlockOptions(options);
   };
 
   const initEventDragging = (
@@ -117,6 +130,7 @@ export const BlocksSideBar = () => {
     if (!event.isPrimary) return;
     if (!draggedBlockType && !draggedEventType) return;
     setDraggedBlockType(undefined);
+    setDraggedBlockOptions(undefined);
     setDraggedEventType(undefined);
     setPosition({
       x: 0,
@@ -141,17 +155,41 @@ export const BlocksSideBar = () => {
     setSearchInput(event.target.value);
   };
 
+  const hostBlocks =
+    hostActionCatalog?.actions.flatMap((action) =>
+      action.hostBlock?.palette?.placement === "host-section" &&
+      action.hostBlock.palette.section &&
+      action.hostBlock.blockId
+        ? [
+            {
+              blockId: action.hostBlock.blockId,
+              capabilityKey: action.key,
+              title: action.title,
+              section: action.hostBlock.palette.section,
+            },
+          ]
+        : [],
+    ) ?? [];
+  const hostBlockIds = new Set(hostBlocks.map(({ blockId }) => blockId));
   const filteredForgedBlockIds = Object.values(forgedBlocks)
     .filter((block) => {
+      const hostTitle = hostBlocks.find(
+        (hostBlock) => hostBlock.blockId === block.id,
+      )?.title;
+      const needle = searchInput.toLowerCase();
       return (
-        block.id.toLowerCase().includes(searchInput.toLowerCase()) ||
-        block.tags?.some((tag: string) =>
-          tag.toLowerCase().includes(searchInput.toLowerCase()),
-        ) ||
-        block.name.toLowerCase().includes(searchInput.toLowerCase())
+        block.id.toLowerCase().includes(needle) ||
+        block.tags?.some((tag: string) => tag.toLowerCase().includes(needle)) ||
+        block.name.toLowerCase().includes(needle) ||
+        hostTitle?.toLowerCase().includes(needle)
       );
     })
     .map((block) => block.id);
+  const hostSections = [
+    ...new Map(
+      hostBlocks.map(({ section }) => [section.key, section]),
+    ).values(),
+  ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
   const filteredBubbleBlockTypes = Object.values(BubbleBlockType).filter(
     (type) =>
@@ -297,7 +335,11 @@ export const BlocksSideBar = () => {
           </h4>
           <div className="grid gap-3 grid-cols-2">
             {filteredIntegrationBlockTypes
-              .concat(filteredForgedBlockIds as any)
+              .concat(
+                filteredForgedBlockIds.filter(
+                  (blockId) => !hostBlockIds.has(blockId),
+                ) as any,
+              )
               .map((type) => (
                 <BlockCard
                   key={type}
@@ -307,6 +349,46 @@ export const BlocksSideBar = () => {
               ))}
           </div>
         </div>
+
+        {hostSections.map((section) => {
+          const sectionBlocks = filteredForgedBlockIds.filter((blockId) =>
+            hostBlocks.some(
+              (block) =>
+                block.blockId === blockId && block.section.key === section.key,
+            ),
+          );
+          if (!sectionBlocks.length) return null;
+          return (
+            <div key={section.key} className="flex flex-col gap-2">
+              <h4 className="flex items-center gap-2 text-sm">
+                <span aria-hidden="true">
+                  {getHostSectionIcon(section.icon)}
+                </span>
+                {section.title}
+              </h4>
+              <div className="grid gap-3 grid-cols-2">
+                {sectionBlocks.map((blockId) => (
+                  <BlockCard
+                    key={blockId}
+                    type={blockId as BlockV6["type"]}
+                    label={
+                      hostBlocks.find((block) => block.blockId === blockId)
+                        ?.title
+                    }
+                    onPointerDown={(event, type) =>
+                      initBlockDragging(event, type, {
+                        action: hostCapabilityActionName,
+                        capabilityKey: hostBlocks.find(
+                          (block) => block.blockId === blockId,
+                        )?.capabilityKey,
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
 
         {draggedBlockType && (
           <Portal>
@@ -347,6 +429,19 @@ export const BlocksSideBar = () => {
       )}
     </div>
   );
+};
+
+const getHostSectionIcon = (icon?: string) => {
+  switch (icon) {
+    case "building":
+      return "🏢";
+    case "shield":
+      return "🛡️";
+    case "grid":
+      return "▦";
+    default:
+      return "🔌";
+  }
 };
 
 const isMouseInElement = (

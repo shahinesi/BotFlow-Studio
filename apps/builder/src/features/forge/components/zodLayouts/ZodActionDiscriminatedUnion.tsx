@@ -28,6 +28,9 @@ export const ZodActionDiscriminatedUnion = ({
   const currentOptions = blockOptions?.action
     ? optionsMap.get(blockOptions?.action)
     : undefined;
+  const availableActions = [...optionsMap.keys()].filter(
+    (key) => isDefined(key) && !isActionHidden(blockDef, key),
+  );
   const keysBeforeActionField = useMemo(() => {
     if (!currentOptions) return [];
     return Object.keys(currentOptions.shape).slice(
@@ -37,17 +40,22 @@ export const ZodActionDiscriminatedUnion = ({
   }, [currentOptions]);
   return (
     <>
-      <BasicSelect
-        className="w-full"
-        value={blockOptions?.action}
-        onChange={(item) => onDataChange({ ...blockOptions, action: item })}
-        items={[...optionsMap.keys()].filter(
-          (key) =>
-            isDefined(key) &&
-            (!isActionHidden(blockDef, key) || key === blockOptions?.action),
-        )}
-        placeholder="Select an action"
-      />
+      {(availableActions.length > 0 ||
+        !isActionHidden(blockDef, blockOptions?.action)) && (
+        <BasicSelect
+          className="w-full"
+          value={blockOptions?.action}
+          onChange={(item) => onDataChange({ ...blockOptions, action: item })}
+          items={[
+            ...availableActions,
+            ...(blockOptions?.action &&
+            isActionHidden(blockDef, blockOptions.action)
+              ? [blockOptions.action]
+              : []),
+          ]}
+          placeholder="Select an action"
+        />
+      )}
       {currentOptions && (
         <ZodObjectLayout
           schema={currentOptions}

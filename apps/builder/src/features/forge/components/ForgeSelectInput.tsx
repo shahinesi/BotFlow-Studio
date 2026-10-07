@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ForgedBlockDefinition } from "@typebot.io/forge-repository/definitions";
 import type { ForgedBlock } from "@typebot.io/forge-repository/schemas";
 import { type ReactNode, useMemo } from "react";
+import { BasicAutocompleteInput } from "@/components/inputs/BasicAutocompleteInput";
 import { BasicSelect } from "@/components/inputs/BasicSelect";
 import { useWorkspace } from "@/features/workspace/WorkspaceProvider";
 import { orpc } from "@/lib/queryClient";
@@ -14,6 +15,7 @@ type Props = {
   options: ForgedBlock["options"];
   placeholder?: string;
   withVariableButton?: boolean;
+  searchable?: boolean;
   credentialsScope: "workspace" | "user";
   onChange: (value: string | undefined) => void;
 };
@@ -25,6 +27,7 @@ export const ForgeSelectInput = ({
   blockDef,
   placeholder,
   withVariableButton = false,
+  searchable = false,
   onChange,
 }: Props) => {
   const { workspace } = useWorkspace();
@@ -34,7 +37,7 @@ export const ForgeSelectInput = ({
     [blockDef, fetcherId],
   );
 
-  const { data } = useQuery(
+  const { data, isError, isFetching, refetch } = useQuery(
     orpc.forge.fetchSelectItems.queryOptions({
       input:
         credentialsScope === "workspace"
@@ -64,20 +67,57 @@ export const ForgeSelectInput = ({
   const shouldIncludeVariables =
     withVariableButton && (data?.items?.length ?? 0) > 0;
 
+  const items = [...(data?.items ?? [])] as {
+    label: ReactNode;
+    value: string;
+  }[];
+  if (defaultValue && !items.some((item) => item.value === defaultValue))
+    items.unshift({
+      value: defaultValue,
+      label: `${defaultValue} (not listed by the provider)`,
+    });
+  const selectedLabel = items.find(
+    (item) => item.value === defaultValue,
+  )?.label;
+  const autocompleteItems = items.map((item) => String(item.label));
+
   return (
-    <BasicSelect
-      items={
-        (data?.items ?? []) as {
-          label: ReactNode;
-          value: string;
-        }[]
-      }
-      value={defaultValue}
-      onChange={onChange}
-      includeVariables={shouldIncludeVariables}
-      placeholder={placeholder}
-      className="flex-1 w-full"
-    />
+    <div className="flex flex-col gap-2">
+      {isError && (
+        <p role="alert" className="text-sm text-destructive">
+          Options are unavailable.{" "}
+          <button
+            type="button"
+            className="underline"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            Retry
+          </button>
+        </p>
+      )}
+      {searchable ? (
+        <BasicAutocompleteInput
+          key={defaultValue ?? "new"}
+          items={autocompleteItems}
+          defaultValue={selectedLabel ? String(selectedLabel) : undefined}
+          placeholder={placeholder}
+          onChange={(label) => {
+            const selected = items.find((item) => String(item.label) === label);
+            if (selected) onChange(selected.value);
+          }}
+        />
+      ) : (
+        <BasicSelect
+          items={items}
+          value={defaultValue}
+          onChange={onChange}
+          includeVariables={shouldIncludeVariables}
+          placeholder={placeholder}
+          className="flex-1 w-full"
+        />
+      )}
+    </div>
   );
 };
 

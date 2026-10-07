@@ -17,6 +17,10 @@ import {
 } from "@typebot.io/typebot/schemas/typebot";
 import type { User } from "@typebot.io/user/schemas";
 import { z } from "zod";
+import {
+  assertHostTemplateActionsAvailable,
+  getHostTemplate,
+} from "@/features/templates/api/hostTemplateApi";
 import { getUserModeInWorkspace } from "@/features/workspace/helpers/getUserRoleInWorkspace";
 import {
   sanitizeFolderId,
@@ -105,15 +109,25 @@ export const importTypebotInputSchema = z
       ),
     typebot: importingTypebotSchema.optional(),
     templateSlug: z.string().optional(),
+    hostTemplateKey: z.string().min(1).max(128).optional(),
     folderId: z.string().nullable().optional(),
     fromTemplate: z.string().optional(),
   })
-  .refine(({ typebot, templateSlug }) => typebot || templateSlug, {
-    message: "Either typebot or templateSlug is required",
-  });
+  .refine(
+    ({ typebot, templateSlug, hostTemplateKey }) =>
+      hostTemplateKey ? !typebot && !templateSlug : typebot || templateSlug,
+    { message: "A typebot or template reference is required" },
+  );
 
 export const handleImportTypebot = async ({
-  input: { typebot, workspaceId, templateSlug, folderId, fromTemplate },
+  input: {
+    typebot,
+    workspaceId,
+    templateSlug,
+    hostTemplateKey,
+    folderId,
+    fromTemplate,
+  },
   context: { user },
 }: {
   input: z.infer<typeof importTypebotInputSchema>;
@@ -130,6 +144,9 @@ export const handleImportTypebot = async ({
   const template = templateSlug
     ? getTemplateWithTypebotBySlug(templateSlug)
     : undefined;
+  const hostTemplate = hostTemplateKey
+    ? await getHostTemplate(hostTemplateKey)
+    : undefined;
 
   if (templateSlug && !template)
     throw new ORPCError("NOT_FOUND", { message: "Template not found" });
@@ -137,10 +154,22 @@ export const handleImportTypebot = async ({
   const typebotToImport =
     typebot ??
     importingTypebotSchema.parse({
-      ...template?.typebot,
-      name: template?.template.name,
-      folderId,
+      ...(hostTemplate?.typebot ?? template?.typebot),
+      name: hostTemplate?.name ?? template?.template.name,
+      folderId: folderId ?? null,
     });
+
+  if (hostTemplate) {
+    const hostActionKeys = (typebotToImport.groups ?? []).flatMap((group) =>
+      group.blocks.flatMap((block) =>
+        block.type === "host-action" &&
+        typeof block.options.actionKey === "string"
+          ? [block.options.actionKey]
+          : [],
+      ),
+    );
+    await assertHostTemplateActionsAvailable(hostActionKeys);
+  }
 
   const newBotId = createId();
 
@@ -210,7 +239,7 @@ export const handleImportTypebot = async ({
       typebotId: parsedNewTypebot.id,
       userId: user.id,
       data: {
-        template: fromTemplate ?? template?.template.name,
+        template: hostTemplate?.name ?? fromTemplate ?? template?.template.name,
       },
     },
   ]);

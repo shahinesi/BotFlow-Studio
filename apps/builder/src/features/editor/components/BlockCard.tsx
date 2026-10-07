@@ -18,6 +18,7 @@ import { BlockLabel } from "./BlockLabel";
 
 type Props = {
   type: BlockV6["type"];
+  label?: string;
   tooltip?: string;
   isDisabled?: boolean;
   children: React.ReactNode;
@@ -25,14 +26,18 @@ type Props = {
 };
 
 export const BlockCard = (
-  props: Pick<Props, "type" | "onPointerDown">,
+  props: Pick<Props, "type" | "label" | "onPointerDown">,
 ): JSX.Element => {
   const { t } = useTranslate();
   const { workspace } = useWorkspace();
 
   if (isForgedBlockType(props.type)) {
     return (
-      <ForgedBlockCard type={props.type} onPointerDown={props.onPointerDown} />
+      <ForgedBlockCard
+        type={props.type}
+        label={props.label}
+        onPointerDown={props.onPointerDown}
+      />
     );
   }
   switch (props.type) {

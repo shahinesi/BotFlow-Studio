@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, expect, it, mock } from "bun:test";
 import { IntegrationBlockType } from "@typebot.io/blocks-integrations/constants";
 import { LogicBlockType } from "@typebot.io/blocks-logic/constants";
 import { clientSideActionSchema } from "@typebot.io/chat-api/clientSideAction";
@@ -46,6 +46,96 @@ const stored = typebotV6Schema.parse({
   isArchived: false,
   isClosed: false,
 });
+const demoHostTypebot = {
+  version: "6.1",
+  name: "Demo template",
+  icon: null,
+  folderId: null,
+  events: [
+    {
+      id: "demo-start",
+      type: "start",
+      graphCoordinates: { x: 0, y: 0 },
+      outgoingEdgeId: "demo-start-edge",
+    },
+  ],
+  groups: [
+    {
+      id: "demo-main",
+      title: "Demo",
+      graphCoordinates: { x: 100, y: 0 },
+      blocks: [
+        {
+          id: "demo-action",
+          type: "host-action",
+          options: {
+            action: "Execute Action",
+            actionKey: "demo.echo",
+            inputs: [],
+            outputVariableId: "demo-output",
+          },
+        },
+        {
+          id: "demo-choice",
+          type: "choice input",
+          options: { variableId: "demo-answer" },
+          items: [
+            {
+              id: "demo-option-one",
+              content: "First option",
+              value: "first",
+              outgoingEdgeId: "demo-option-one-edge",
+            },
+            {
+              id: "demo-option-two",
+              content: "Second option",
+              value: "second",
+              outgoingEdgeId: "demo-option-two-edge",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "demo-first-result",
+      title: "First result",
+      graphCoordinates: { x: 400, y: -100 },
+      blocks: [],
+    },
+    {
+      id: "demo-second-result",
+      title: "Second result",
+      graphCoordinates: { x: 400, y: 100 },
+      blocks: [],
+    },
+  ],
+  edges: [
+    {
+      id: "demo-start-edge",
+      from: { eventId: "demo-start" },
+      to: { groupId: "demo-main" },
+    },
+    {
+      id: "demo-option-one-edge",
+      from: { blockId: "demo-choice", itemId: "demo-option-one" },
+      to: { groupId: "demo-first-result" },
+    },
+    {
+      id: "demo-option-two-edge",
+      from: { blockId: "demo-choice", itemId: "demo-option-two" },
+      to: { groupId: "demo-second-result" },
+    },
+  ],
+  variables: [
+    { id: "demo-output", name: "output" },
+    { id: "demo-answer", name: "answer" },
+  ],
+  theme: {},
+  settings: {},
+};
+const originalFetch = globalThis.fetch;
+const originalHostBaseUrl = process.env.HOST_API_BASE_URL;
+const originalHostServiceKey = process.env.HOST_SERVICE_AUTH_KEY;
 mock.module("@typebot.io/prisma", () => ({
   default: {
     workspace: { findUnique: async () => workspace },
@@ -58,6 +148,16 @@ mock.module("@typebot.io/telemetry/trackEvents", () => ({
 }));
 mock.module("@typebot.io/lib/s3/copyObjects", () => ({
   copyObjects: async () => {},
+}));
+mock.module("@typebot.io/lib/s3/replaceTypebotUploadUrlsWithNewIds", () => ({
+  replaceTypebotUploadUrlsWithNewIds: async ({
+    typebot,
+  }: {
+    typebot: unknown;
+  }) => ({
+    typebot,
+    filesToCopy: [],
+  }),
 }));
 
 const { handleCreateTypebot, createTypebotInputSchema } = await import(
@@ -85,6 +185,12 @@ beforeEach(() => {
     workspace,
     collaborators: [{ userId: "collaborator", type: CollaborationType.WRITE }],
   });
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  process.env.HOST_API_BASE_URL = originalHostBaseUrl;
+  process.env.HOST_SERVICE_AUTH_KEY = originalHostServiceKey;
 });
 
 const groups = [
@@ -178,6 +284,99 @@ it("import ignores the retired safety opt-out", async () => {
     handleImportTypebot({ input, context: { user: { id: "owner" } } }),
   ).rejects.toThrow("persist");
   expectLegacyFlagsRemoved(create.mock.calls[0][0].data.groups);
+});
+
+it("keeps built-in template import independent from Host availability", async () => {
+  let hostRequestSent = false;
+  globalThis.fetch = Object.assign(async () => {
+    hostRequestSent = true;
+    throw new Error("Host should not be requested for built-ins");
+  }, originalFetch) as typeof fetch;
+
+  const input = importTypebotInputSchema.parse({
+    workspaceId: workspace.id,
+    templateSlug: "faq",
+    folderId: null,
+  });
+  await expect(
+    handleImportTypebot({ input, context: { user: { id: "owner" } } }),
+  ).rejects.toThrow("persist");
+
+  expect(hostRequestSent).toBe(false);
+  expect(create.mock.calls[0][0].data.name).toBe("FAQ");
+});
+
+it("creates an editable Typebot through the official import path for a generic Host template", async () => {
+  process.env.HOST_API_BASE_URL = "http://host.internal";
+  process.env.HOST_SERVICE_AUTH_KEY = "server-only-host-key";
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toEqual({
+        "x-host-service-key": "server-only-host-key",
+      });
+      if (String(input).endsWith("/internal/host/actions/catalog"))
+        return Response.json({
+          actions: [
+            {
+              key: "demo.echo",
+              title: "Echo",
+              description: "Returns the supplied value.",
+              inputs: [],
+              outputs: [{ key: "text", type: "string" }],
+            },
+          ],
+        });
+      expect(String(input)).toBe(
+        "http://host.internal/internal/host/templates/demo-template",
+      );
+      return Response.json({
+        template: {
+          key: "demo-template",
+          name: "Demo template",
+          description: "A generic Project B starting point.",
+          typebot: demoHostTypebot,
+        },
+      });
+    },
+    originalFetch,
+  ) as typeof fetch;
+  create.mockImplementation(
+    async ({ data }: { data: Record<string, unknown> }) => {
+      const persistedData = Object.fromEntries(
+        Object.entries(data).filter(([, value]) => value !== undefined),
+      );
+      return typebotV6Schema.parse({
+        ...stored,
+        ...persistedData,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    },
+  );
+
+  const input = importTypebotInputSchema.parse({
+    workspaceId: workspace.id,
+    hostTemplateKey: "demo-template",
+  });
+  const result = await handleImportTypebot({
+    input,
+    context: { user: { id: "owner" } },
+  });
+
+  expect(result.typebot.name).toBe("Demo template");
+  expect(result.typebot.id).toBeTruthy();
+  expect(result.typebot.groups.flatMap(({ blocks }) => blocks)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "host-action",
+        options: expect.objectContaining({ actionKey: "demo.echo" }),
+      }),
+      expect.objectContaining({ type: "choice input" }),
+    ]),
+  );
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(create.mock.calls[0][0].data).not.toHaveProperty("hostTemplateKey");
+  expect(JSON.stringify(result)).not.toContain("server-only-host-key");
 });
 
 it.each([
