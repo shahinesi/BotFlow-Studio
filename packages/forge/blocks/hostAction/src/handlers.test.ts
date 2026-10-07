@@ -353,6 +353,37 @@ it("keeps Host actions out of real services during Builder Preview", async () =>
   expect(values).toEqual(["VERIFICATION_REQUIRED"]);
 });
 
+it("shows a user-facing preview result without calling the Host runtime", async () => {
+  let called = false;
+  globalThis.fetch = Object.assign(
+    async () => {
+      called = true;
+      throw new Error("Preview must not call Host services");
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const values: string[] = [];
+  const logs: unknown[] = [];
+  await hostActionHandler.server!({
+    credentials: undefined,
+    isPreview: true,
+    options: {
+      actionKey: "demo.lookup",
+      outputVariableId: "result",
+    },
+    variables: {
+      set: (items: { value: unknown }[]) => values.push(String(items[0].value)),
+    },
+    logs: { add: (entry: unknown) => logs.push(entry) },
+  } as never);
+
+  expect(called).toBe(false);
+  expect(values).toEqual(["This action runs only in a live bot session."]);
+  expect(JSON.stringify(logs)).toContain(
+    "This action runs only in a live bot session.",
+  );
+});
+
 it("rejects malformed access outcomes and does not store them", async () => {
   process.env.HOST_API_BASE_URL = "http://localhost:1234";
   process.env.HOST_SERVICE_AUTH_KEY = "host-service-secret";

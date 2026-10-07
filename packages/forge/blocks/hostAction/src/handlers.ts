@@ -77,12 +77,12 @@ export const hostActionHandler = createActionHandler(hostAction, {
         variables.set([
           {
             id: options.outputVariableId,
-            value: "Host Action skipped in Preview",
+            value: "This action runs only in a live bot session.",
           },
         ]);
       logs.add({
         status: "info",
-        description: "Host Actions are not executed in Builder Preview.",
+        description: "This action runs only in a live bot session.",
       });
       return;
     }
